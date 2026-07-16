@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "Nourish",
+    "slug": "nourish-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "nourish-app",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1e3a2f"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.ristudio.nourish",
+      "privacyManifests": {
+        "NSPrivacyAccessedAPITypes": []
+      },
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.ristudio.nourish"
+    },
+    "web": {
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "8f259da7-0d7c-480b-8f48-7c862d2bb34f"
+      }
+    },
+    "owner": "jojo16467"
+  }
+}
