@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/nourish-app/"
+title = "Nourish — Meal Plan App"
+version = "1.0.0"
+id = "artifacts/nourish-app"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/nourish-app/" ]
+localPort = 18152
+
+[services.development]
+run = "pnpm --filter @workspace/nourish-app run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/nourish-app", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/nourish-app", "run", "serve" ]
+
+[services.env]
+PORT = "18152"
+BASE_PATH = "/nourish-app/"
