@@ -1,9 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { router, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useState } from "react";
 import {
   Alert,
+  Image,
   Modal,
   Platform,
   Pressable,
@@ -18,6 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { plans } from "@/data/plans";
 import { getCookingSteps } from "@/data/cookingInstructions";
+import { libraryItems, type LibraryAssignment } from "@/data/library";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const SHORT_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -40,6 +42,41 @@ const SHOPPING_CUSTOM_KEY = "nourish:shopping:custom";
 type CustomMeal = { id: string; label: string; text: string };
 type ShoppingCustomItem = { id: string; category: string; item: string; why: string };
 
+function parseAssignment(raw: string): LibraryAssignment | null {
+  try {
+    const parsed = JSON.parse(raw) as LibraryAssignment;
+    if (parsed.version === 1 && parsed.recipeId) return parsed;
+  } catch {
+    const legacyItem = libraryItems.find((item) => item.id === raw);
+    if (legacyItem) {
+      return {
+        version: 1,
+        recipeId: raw,
+        servings: legacyItem.servings,
+        assignedAt: "",
+      };
+    }
+  }
+  return null;
+}
+
+function parseAmount(amount: string): number | null {
+  const normalized = amount.trim();
+  const mixedNumber = normalized.match(/^(\d+)\s+(\d+)\/(\d+)$/);
+  if (mixedNumber) return Number(mixedNumber[1]) + Number(mixedNumber[2]) / Number(mixedNumber[3]);
+  const fraction = normalized.match(/^(\d+)\/(\d+)$/);
+  if (fraction) return Number(fraction[1]) / Number(fraction[2]);
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function scaleAmount(amount: string, ratio: number): string {
+  const parsed = parseAmount(amount);
+  if (parsed === null || ratio === 1) return amount;
+  const scaled = parsed * ratio;
+  return Number.isInteger(scaled) ? String(scaled) : String(Math.round(scaled * 100) / 100);
+}
+
 export default function PlanScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const colors = useColors();
@@ -53,6 +90,7 @@ export default function PlanScreen() {
   const [fishSwap, setFishSwap] = useState(false);
   const [customMeals, setCustomMeals] = useState<Record<string, CustomMeal[]>>({});
   const [editedMeals, setEditedMeals] = useState<Record<string, string>>({});
+  const [libraryAssignments, setLibraryAssignments] = useState<Record<string, LibraryAssignment>>({});
 
   // Add custom meal modal
   const [addModalVisible, setAddModalVisible] = useState(false);
@@ -75,19 +113,28 @@ export default function PlanScreen() {
   const checkedKey = useCallback((day: string, meal: string) => `nourish:${id}:${day}:${meal}`, [id]);
   const customKey = useCallback((day: string) => `nourish:custom:${id}:${day}`, [id]);
   const editedKey = useCallback((day: string, meal: string) => `nourish:edited:${id}:${day}:${meal}`, [id]);
+  const assignmentKey = useCallback(
+    (day: string, meal: string) => `nourish:library:assignment:${id}:${day}:${meal}`,
+    [id]
+  );
 
-  useEffect(() => {
-    if (!plan) return;
-    const load = async () => {
+  useFocusEffect(
+    useCallback(() => {
+      if (!plan) return;
+      const load = async () => {
       const checkedEntries: Record<string, boolean> = {};
       const customEntries: Record<string, CustomMeal[]> = {};
       const editedEntries: Record<string, string> = {};
+      const assignmentEntries: Record<string, LibraryAssignment> = {};
       for (const day of DAYS) {
         for (const m of MEALS) {
           const v = await AsyncStorage.getItem(checkedKey(day, m));
           if (v === "true") checkedEntries[checkedKey(day, m)] = true;
           const ev = await AsyncStorage.getItem(editedKey(day, m));
           if (ev) editedEntries[editedKey(day, m)] = ev;
+          const assignmentRaw = await AsyncStorage.getItem(assignmentKey(day, m));
+          const assignment = assignmentRaw ? parseAssignment(assignmentRaw) : null;
+          if (assignment) assignmentEntries[assignmentKey(day, m)] = assignment;
         }
         const cv = await AsyncStorage.getItem(customKey(day));
         if (cv) customEntries[day] = JSON.parse(cv);
@@ -95,9 +142,11 @@ export default function PlanScreen() {
       setChecked(checkedEntries);
       setCustomMeals(customEntries);
       setEditedMeals(editedEntries);
-    };
-    load();
-  }, [plan, checkedKey, customKey, editedKey]);
+      setLibraryAssignments(assignmentEntries);
+      };
+      load();
+    }, [plan, assignmentKey, checkedKey, customKey, editedKey])
+  );
 
   const toggleCheck = async (day: string, meal: string) => {
     const key = checkedKey(day, meal);
@@ -170,8 +219,13 @@ export default function PlanScreen() {
     const day = DAYS[activeDay];
     const key = editedKey(day, editBuiltinMeal);
     const updated = { ...editedMeals, [key]: editBuiltinText.trim() };
+    const libraryKey = assignmentKey(day, editBuiltinMeal);
+    const updatedAssignments = { ...libraryAssignments };
+    delete updatedAssignments[libraryKey];
     setEditedMeals(updated);
-    await AsyncStorage.setItem(key, editBuiltinText.trim());
+    setLibraryAssignments(updatedAssignments);
+    await AsyncStorage.multiSet([[key, editBuiltinText.trim()]]);
+    await AsyncStorage.removeItem(libraryKey);
     setEditBuiltinVisible(false);
   };
 
@@ -179,9 +233,13 @@ export default function PlanScreen() {
     const day = DAYS[activeDay];
     const key = editedKey(day, meal);
     const updated = { ...editedMeals };
+    const libraryKey = assignmentKey(day, meal);
+    const updatedAssignments = { ...libraryAssignments };
     delete updated[key];
+    delete updatedAssignments[libraryKey];
     setEditedMeals(updated);
-    await AsyncStorage.removeItem(key);
+    setLibraryAssignments(updatedAssignments);
+    await AsyncStorage.multiRemove([key, libraryKey]);
   };
 
   // Cooking instructions
@@ -200,22 +258,44 @@ export default function PlanScreen() {
   // Add day to shopping list
   const addDayToShoppingList = async () => {
     const day = DAYS[activeDay];
-    const mealItems: string[] = MEALS.map((m) => getDisplayMealText(m)).filter(Boolean);
-
     const raw = await AsyncStorage.getItem(SHOPPING_CUSTOM_KEY);
     const existing: ShoppingCustomItem[] = raw ? JSON.parse(raw) : [];
+    const newItems: ShoppingCustomItem[] = [];
+    MEALS.forEach((meal, mealIndex) => {
+      const assignment = libraryAssignments[assignmentKey(day, meal)];
+      const assignedItem = libraryItems.find((libraryItem) => libraryItem.id === assignment?.recipeId);
+      if (assignedItem) {
+        const servingRatio = assignment.servings / assignedItem.servings;
+        assignedItem.ingredients.forEach((ingredient, ingredientIndex) => {
+          const amount = scaleAmount(ingredient.amount, servingRatio);
+          newItems.push({
+            id: `plan-${id}-${day}-${meal}-${Date.now() + mealIndex + ingredientIndex}`,
+            category: ingredient.category || "Pantry Staples",
+            item: `${amount} ${ingredient.unit} ${ingredient.name}`,
+            why: `${assignedItem.title} · ${plan?.title ?? "Meal Plan"} · ${day}`,
+          });
+        });
+        return;
+      }
+      const text = getDisplayMealText(meal);
+      if (text) {
+        newItems.push({
+          id: `plan-${id}-${day}-${meal}-${Date.now() + mealIndex}`,
+          category: "From Meal Plan",
+          item: `${meal.charAt(0).toUpperCase() + meal.slice(1)}: ${text}`,
+          why: `${plan?.title ?? "Meal Plan"} · ${day}`,
+        });
+      }
+    });
+    const existingNames = new Set(existing.map((item) => item.item.toLowerCase()));
+    const uniqueNewItems = newItems.filter((item) => !existingNames.has(item.item.toLowerCase()));
 
-    const newItems: ShoppingCustomItem[] = mealItems.map((text, i) => ({
-      id: `plan-${id}-${day}-${MEALS[i]}-${Date.now() + i}`,
-      category: "From Meal Plan",
-      item: `${MEALS[i].charAt(0).toUpperCase() + MEALS[i].slice(1)}: ${text}`,
-      why: `${plan?.title ?? "Meal Plan"} — ${day}`,
-    }));
-
-    await AsyncStorage.setItem(SHOPPING_CUSTOM_KEY, JSON.stringify([...existing, ...newItems]));
+    await AsyncStorage.setItem(SHOPPING_CUSTOM_KEY, JSON.stringify([...existing, ...uniqueNewItems]));
     Alert.alert(
-      "Added to Shopping List ✓",
-      `${day}'s meals have been added to your Food Guide shopping list.`,
+      "Shopping List Updated",
+      uniqueNewItems.length > 0
+        ? `${uniqueNewItems.length} items from ${day}'s meals were added to your Guide shopping list.`
+        : `${day}'s ingredients are already on your shopping list.`,
       [{ text: "OK" }]
     );
   };
@@ -319,8 +399,32 @@ export default function PlanScreen() {
           const mealText = getDisplayMealText(meal);
           const edited = isEdited(meal);
           const hasSteps = hasRecipe(meal);
+           const assignment = libraryAssignments[assignmentKey(DAYS[activeDay], meal)];
+           const assignedItem = libraryItems.find((libraryItem) => libraryItem.id === assignment?.recipeId);
           return (
             <View key={meal} style={[styles.mealCard, { backgroundColor: colors.card, borderColor: isDone ? planColor : colors.border }, isDone && { backgroundColor: planColor + "0c" }]}>
+               {assignedItem && (
+                 <Pressable
+                   style={({ pressed }) => [styles.assignedPreview, pressed && { opacity: 0.88 }]}
+                   onPress={() => router.push(`/library/${assignedItem.id}` as never)}
+                   accessibilityRole="button"
+                   accessibilityLabel={`Open ${assignedItem.title} recipe details`}
+                 >
+                   <Image source={assignedItem.image} style={styles.assignedImage} resizeMode="cover" />
+                   <View style={styles.assignedOverlay}>
+                     <View style={styles.assignedBadge}>
+                       <Ionicons name="book-outline" size={12} color="#fff" />
+                       <Text style={styles.assignedBadgeText}>From Explore</Text>
+                     </View>
+                     <Text style={styles.assignedMeta}>
+                       {assignment.servings} servings · Est. {Math.round(assignedItem.estimatedNutrition.calories * assignment.servings / assignedItem.servings)} kcal · {assignedItem.prepMinutes + assignedItem.cookMinutes} min
+                     </Text>
+                     {assignment.note ? (
+                       <Text style={styles.assignedNote} numberOfLines={2}>{assignment.note}</Text>
+                     ) : null}
+                   </View>
+                 </Pressable>
+               )}
               <View style={styles.mealMain}>
                 <Pressable
                   style={({ pressed }) => [styles.mealCheckArea, pressed && { opacity: 0.8 }]}
@@ -347,6 +451,15 @@ export default function PlanScreen() {
 
                 {/* Action row */}
                 <View style={[styles.mealActions, { borderTopColor: colors.border + "60" }]}>
+                   {assignedItem && (
+                     <Pressable
+                       style={({ pressed }) => [styles.mealActionBtn, pressed && { opacity: 0.6 }]}
+                       onPress={() => router.push(`/library/${assignedItem.id}` as never)}
+                     >
+                       <Ionicons name="book-outline" size={13} color={planColor} />
+                       <Text style={[styles.mealActionText, { color: planColor }]}>View Recipe</Text>
+                     </Pressable>
+                   )}
                   {hasSteps && (
                     <Pressable style={({ pressed }) => [styles.mealActionBtn, pressed && { opacity: 0.6 }]} onPress={() => openRecipe(meal)}>
                       <Ionicons name="flame-outline" size={13} color={planColor} />
@@ -559,6 +672,21 @@ const styles = StyleSheet.create({
   shoppingBtn: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 20, borderWidth: 1 },
   shoppingBtnText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
   mealCard: { borderRadius: 12, borderWidth: 1.5, marginBottom: 10, overflow: "hidden" },
+  assignedPreview: { height: 138, position: "relative" },
+  assignedImage: { width: "100%", height: "100%" },
+  assignedOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    padding: 10,
+    gap: 5,
+    backgroundColor: "rgba(18,30,24,0.62)",
+  },
+  assignedBadge: { flexDirection: "row", alignItems: "center", gap: 5 },
+  assignedBadgeText: { color: "#fff", fontSize: 11, fontFamily: "Inter_600SemiBold" },
+  assignedMeta: { color: "rgba(255,255,255,0.88)", fontSize: 11, fontFamily: "Inter_400Regular" },
+  assignedNote: { color: "#fff", fontSize: 11, lineHeight: 16, fontFamily: "Inter_500Medium" },
   customMealCard: { borderStyle: "dashed" },
   mealMain: { flex: 1 },
   mealCheckArea: { flexDirection: "row", alignItems: "flex-start", gap: 12, padding: 14 },

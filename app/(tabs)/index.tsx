@@ -1,9 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React from "react";
+import React, { useEffect } from "react";
 import {
-  Dimensions,
+  Image,
   ImageBackground,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -15,12 +18,216 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { plans } from "@/data/plans";
 import { usePurchase } from "@/contexts/PurchaseContext";
+import { WELCOME_SEEN_KEY } from "@/constants/keys";
+
+const GEM_IMAGES = {
+  emerald: require("../../assets/images/gem-emerald.png"),
+  sapphire: require("../../assets/images/gem-sapphire.png"),
+  ruby:     require("../../assets/images/gem-ruby.png"),
+  diamond:  require("../../assets/images/gem-diamond.png"),
+};
 
 const HERO_IMAGE = require("../../assets/images/nourish-premium.png");
 const BANNER_IMAGE = require("../../assets/images/nourish-banner.png");
-const { width } = Dimensions.get("window");
 
 const PLAN_COLORS = ["#4a7c59", "#b5813a", "#2e6b8a", "#7a4a8a"];
+
+// ─── Tier config (mirrors checkout design language) ─────────────────────────
+const TIER_CONFIG = {
+  essentials: {
+    gem: "emerald" as const,
+    cardBg: ["#f4fbf7", "#eaf6ef", "#f4fbf7"] as const,
+    accentColor: "#1a6b3c",
+    goldColor: "#8a6914",
+    borderColor: "rgba(26,107,60,0.2)",
+    badge: "ESSENTIALS",
+    title: "Essentials",
+    tagline: "Full access. Flexible planning.",
+    perks: [
+      { icon: "pulse-outline", label: "Inflammation Tracker" },
+      { icon: "leaf-outline", label: "All Meal Plans" },
+      { icon: "book-outline", label: "Food Guide" },
+    ],
+  },
+  pro: {
+    gem: "sapphire" as const,
+    cardBg: ["#f3f6ff", "#eaf0ff", "#f3f6ff"] as const,
+    accentColor: "#1a3fa8",
+    goldColor: "#8a6914",
+    borderColor: "rgba(26,63,168,0.2)",
+    badge: "PRO",
+    title: "Pro",
+    tagline: "Templates, tools & momentum.",
+    perks: [
+      { icon: "grid-outline", label: "Premium Templates" },
+      { icon: "headset-outline", label: "Priority Support" },
+      { icon: "flash-outline", label: "Early Access" },
+    ],
+  },
+  founder: {
+    gem: "ruby" as const,
+    cardBg: ["#fff5f5", "#ffeaea", "#fff5f5"] as const,
+    accentColor: "#991b1b",
+    goldColor: "#8a6914",
+    borderColor: "rgba(153,27,27,0.2)",
+    badge: "VIP · FOUNDER CIRCLE",
+    title: "Founder Circle",
+    tagline: "You believed in Nourish from the beginning.",
+    perks: [
+      { icon: "pulse-outline", label: "Tracker" },
+      { icon: "headset-outline", label: "Audio Library" },
+      { icon: "flask-outline", label: "Beta Features" },
+    ],
+  },
+  legacy: {
+    gem: "diamond" as const,
+    cardBg: ["#fffef5", "#fdf8e8", "#fffef5"] as const,
+    accentColor: "#8a6914",
+    goldColor: "#8a6914",
+    borderColor: "rgba(201,162,39,0.45)",
+    badge: "LEGACY EXCLUSIVE",
+    title: "Legacy Membership",
+    tagline: "The highest tier. Yours by invitation.",
+    perks: [
+      { icon: "diamond-outline", label: "Legacy Vault" },
+      { icon: "mail-outline", label: "Wellness Blueprint" },
+      { icon: "shield-checkmark-outline", label: "Priority Everything" },
+    ],
+  },
+};
+
+type TierKey = keyof typeof TIER_CONFIG;
+
+function MemberCard({ tierKey }: { tierKey: TierKey }) {
+  const cfg = TIER_CONFIG[tierKey];
+
+  return (
+    <View style={[mcStyles.card, { borderColor: cfg.borderColor }]}>
+      <LinearGradient
+        colors={cfg.cardBg}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={mcStyles.grad}
+      >
+        {/* Gem banner */}
+        <View style={mcStyles.gemBanner}>
+          <View style={[mcStyles.gemLine, { backgroundColor: cfg.goldColor + "40" }]} />
+          <Image source={GEM_IMAGES[cfg.gem]} style={mcStyles.gemImage} resizeMode="contain" />
+          <View style={[mcStyles.gemLine, { backgroundColor: cfg.goldColor + "40" }]} />
+        </View>
+
+        {/* Ornament divider */}
+        <View style={mcStyles.ornamentRow}>
+          <View style={[mcStyles.ornamentLine, { backgroundColor: cfg.goldColor + "30" }]} />
+          <Text style={[mcStyles.ornamentDiamond, { color: cfg.goldColor }]}>◆</Text>
+          <View style={[mcStyles.ornamentLine, { backgroundColor: cfg.goldColor + "30" }]} />
+        </View>
+
+        {/* Badge + title */}
+        <View style={mcStyles.headerSection}>
+          <View style={[mcStyles.badge, { borderColor: cfg.goldColor + "70", backgroundColor: cfg.goldColor + "15" }]}>
+            <Text style={[mcStyles.badgeText, { color: cfg.goldColor }]}>{cfg.badge}</Text>
+          </View>
+          <Text style={[mcStyles.title, { color: cfg.goldColor }]}>{cfg.title}</Text>
+          <Text style={[mcStyles.tagline, { color: cfg.accentColor }]}>{cfg.tagline}</Text>
+        </View>
+
+        {/* Divider */}
+        <View style={[mcStyles.divider, { backgroundColor: cfg.goldColor + "25" }]} />
+
+        {/* Perks row */}
+        <View style={mcStyles.perksRow}>
+          {cfg.perks.map((p) => (
+            <View key={p.label} style={mcStyles.perk}>
+              <View style={[mcStyles.perkIcon, { backgroundColor: cfg.goldColor + "18", borderColor: cfg.goldColor + "40" }]}>
+                <Ionicons name={p.icon as any} size={16} color={cfg.goldColor} />
+              </View>
+              <Text style={[mcStyles.perkLabel, { color: cfg.accentColor }]}>{p.label}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Action buttons */}
+        {tierKey === "legacy" && (
+          <>
+            <Pressable
+              style={({ pressed }) => [mcStyles.actionBtn, { borderColor: cfg.goldColor + "55", backgroundColor: cfg.goldColor + "12" }, pressed && { opacity: 0.75 }]}
+              onPress={() => router.push("/vault" as never)}
+            >
+              <Ionicons name="diamond-outline" size={15} color={cfg.goldColor} />
+              <Text style={[mcStyles.actionBtnText, { color: cfg.goldColor }]}>Open Legacy Vault</Text>
+              <Ionicons name="arrow-forward" size={14} color={cfg.goldColor} />
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [mcStyles.actionBtn, { borderColor: cfg.goldColor + "55", backgroundColor: cfg.goldColor + "12" }, pressed && { opacity: 0.75 }]}
+              onPress={() => router.push("/vault-audio" as never)}
+            >
+              <Ionicons name="headset-outline" size={15} color={cfg.goldColor} />
+              <Text style={[mcStyles.actionBtnText, { color: cfg.goldColor }]}>Audio Library</Text>
+              <Ionicons name="arrow-forward" size={14} color={cfg.goldColor} />
+            </Pressable>
+          </>
+        )}
+        {tierKey === "founder" && (
+          <>
+            <Pressable
+              style={({ pressed }) => [mcStyles.actionBtn, { borderColor: cfg.goldColor + "55", backgroundColor: cfg.goldColor + "12" }, pressed && { opacity: 0.75 }]}
+              onPress={() => router.push("/tracker" as never)}
+            >
+              <Ionicons name="pulse-outline" size={15} color={cfg.goldColor} />
+              <Text style={[mcStyles.actionBtnText, { color: cfg.goldColor }]}>Tracker</Text>
+              <Ionicons name="arrow-forward" size={14} color={cfg.goldColor} />
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [mcStyles.actionBtn, { borderColor: cfg.goldColor + "55", backgroundColor: cfg.goldColor + "12" }, pressed && { opacity: 0.75 }]}
+              onPress={() => router.push("/vault-audio" as never)}
+            >
+              <Ionicons name="headset-outline" size={15} color={cfg.goldColor} />
+              <Text style={[mcStyles.actionBtnText, { color: cfg.goldColor }]}>Audio Library</Text>
+              <Ionicons name="arrow-forward" size={14} color={cfg.goldColor} />
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [mcStyles.actionBtn, { borderColor: cfg.goldColor + "55", backgroundColor: cfg.goldColor + "12" }, pressed && { opacity: 0.75 }]}
+              onPress={() => Linking.openURL("mailto:Support@ristudio.app?subject=Founder Circle - Beta Feature Access")}
+            >
+              <Ionicons name="flask-outline" size={15} color={cfg.goldColor} />
+              <Text style={[mcStyles.actionBtnText, { color: cfg.goldColor }]}>Beta Feature Access</Text>
+              <Ionicons name="arrow-forward" size={14} color={cfg.goldColor} />
+            </Pressable>
+          </>
+        )}
+      </LinearGradient>
+    </View>
+  );
+}
+
+const mcStyles = StyleSheet.create({
+  card: {
+    marginHorizontal: 16, marginTop: 20, marginBottom: 4,
+    borderRadius: 20, overflow: "hidden", borderWidth: 1.5,
+    shadowColor: "#c9a227", shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18, shadowRadius: 16, elevation: 8,
+  },
+  grad: { padding: 22, gap: 14 },
+  gemBanner: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12, paddingVertical: 4 },
+  gemLine: { flex: 1, height: 1 },
+  gemImage: { width: 90, height: 90 },
+  ornamentRow: { flexDirection: "row", alignItems: "center", gap: 8, marginVertical: -4 },
+  ornamentLine: { flex: 1, height: 1 },
+  ornamentDiamond: { fontSize: 10 },
+  headerSection: { gap: 6 },
+  badge: { alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 100, borderWidth: 1 },
+  badgeText: { fontSize: 10, fontFamily: "Inter_700Bold", letterSpacing: 1.5 },
+  title: { fontSize: 28, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
+  tagline: { fontSize: 13, fontFamily: "Inter_500Medium", lineHeight: 19 },
+  divider: { height: 1 },
+  perksRow: { flexDirection: "row", justifyContent: "space-around" },
+  perk: { alignItems: "center", gap: 6, flex: 1 },
+  perkIcon: { width: 38, height: 38, borderRadius: 19, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  perkLabel: { fontSize: 11, fontFamily: "Inter_500Medium", textAlign: "center" },
+  actionBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 13, borderRadius: 12, borderWidth: 1 },
+  actionBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold", flex: 1, textAlign: "center" },
+});
 
 export default function HomeScreen() {
   const colors = useColors();
@@ -28,6 +235,15 @@ export default function HomeScreen() {
   const { tier } = usePurchase();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : 0;
+
+  // Redirect first-time users to the welcome/hero screen
+  useEffect(() => {
+    AsyncStorage.getItem(WELCOME_SEEN_KEY).then((v) => {
+      if (v !== "true") {
+        router.replace("/welcome" as never);
+      }
+    });
+  }, []);
 
   return (
     <ScrollView
@@ -46,7 +262,7 @@ export default function HomeScreen() {
           <Text style={styles.riStudio}>RI Studio presents</Text>
           <Text style={styles.heroTitle}>Nourish</Text>
           <Text style={styles.heroTagline}>
-            Eat well. Heal naturally.{"\n"}Feel the difference.
+            Plan beautifully. Eat globally.{"\n"}Make every meal your own.
           </Text>
           <View style={styles.heroCtas}>
             <Pressable
@@ -63,9 +279,9 @@ export default function HomeScreen() {
                 styles.heroSecondary,
                 pressed && { opacity: 0.75 },
               ]}
-              onPress={() => router.push("/(tabs)/plans")}
+              onPress={() => router.push("/(tabs)/library" as never)}
             >
-              <Text style={styles.heroSecondaryText}>Browse Plans</Text>
+              <Text style={styles.heroSecondaryText}>Explore Foods</Text>
             </Pressable>
           </View>
         </View>
@@ -74,55 +290,43 @@ export default function HomeScreen() {
       {/* Tagline strip */}
       <View style={[styles.strip, { backgroundColor: colors.primary }]}>
         <Text style={styles.stripText}>
-          Four science-backed meal plans · Anti-inflammatory eating · Natural healing
+          Global recipes · Visual meal planning · Personal wellness collections
         </Text>
       </View>
 
 
-      {/* Founder Circle Card */}
-      {tier === "founder" && (
-        <View style={styles.founderCard}>
-          <View style={styles.founderCardInner}>
-            {/* Decorative circles */}
-            <View style={styles.founderCircle1} />
-            <View style={styles.founderCircle2} />
+      {/* ── Premium Member Cards ── */}
+      {tier === "legacy" && <MemberCard tierKey="legacy" />}
+      {tier === "founder" && <MemberCard tierKey="founder" />}
+      {tier === "pro" && <MemberCard tierKey="pro" />}
+      {tier === "essentials" && <MemberCard tierKey="essentials" />}
 
-            {/* Top row */}
-            <View style={styles.founderTopRow}>
-              <View style={styles.founderCrownWrap}>
-                <Ionicons name="ribbon" size={22} color="#e8c97a" />
-              </View>
-              <View style={styles.founderPill}>
-                <Text style={styles.founderPillText}>FOUNDING MEMBER</Text>
-              </View>
-            </View>
-
-            {/* Title */}
-            <Text style={styles.founderCardTitle}>Founder Circle</Text>
-            <Text style={styles.founderInnerLabel}>Inner Circle</Text>
-            <Text style={styles.founderCardSub}>
-              You believed in Nourish from the beginning.{"\n"}This membership is yours — forever.
-            </Text>
-
-            {/* Divider */}
-            <View style={styles.founderDivider} />
-
-            {/* Perks row */}
-            <View style={styles.founderPerks}>
-              {[
-                { icon: "call-outline" as const, label: "Monthly 1-on-1" },
-                { icon: "star-outline" as const, label: "All Features" },
-                { icon: "shield-checkmark-outline" as const, label: "Priority Access" },
-              ].map((p) => (
-                <View key={p.label} style={styles.founderPerk}>
-                  <Ionicons name={p.icon} size={16} color="#e8c97a" />
-                  <Text style={styles.founderPerkText}>{p.label}</Text>
-                </View>
-              ))}
-            </View>
+      {/* Explore preview */}
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+          Explore the Library
+        </Text>
+        <Text style={[styles.sectionSub, { color: colors.mutedForeground }]}>
+          Discover breakfasts, global cuisines, vibrant drinks, and wellness collections.
+        </Text>
+        <Pressable
+          style={({ pressed }) => [
+            styles.exploreCard,
+            { backgroundColor: colors.card, borderColor: colors.border },
+            pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
+          ]}
+          onPress={() => router.push("/(tabs)/library" as never)}
+        >
+          <View style={[styles.exploreIconWrap, { backgroundColor: colors.primary + "18" }]}>
+            <Ionicons name="search" size={24} color={colors.primary} />
           </View>
-        </View>
-      )}
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.exploreTitle, { color: colors.foreground }]}>Food & Meal Library</Text>
+            <Text style={[styles.exploreSub, { color: colors.mutedForeground }]}>Browse 24 complete meals, drinks, and snacks</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.mutedForeground} />
+        </Pressable>
+      </View>
 
       {/* Plans preview */}
       <View style={styles.section}>
@@ -168,9 +372,9 @@ export default function HomeScreen() {
       >
         <View style={styles.bannerOverlay} />
         <View style={styles.bannerContent}>
-          <Text style={styles.bannerTitle}>The Science of Anti-Inflammatory Eating</Text>
+          <Text style={styles.bannerTitle}>Anti-Inflammatory Collection</Text>
           <Text style={styles.bannerBody}>
-            Every meal in Nourish is chosen to reduce inflammation at the cellular level — through omega-3s, curcumin, polyphenols, and gut-supporting foods.
+            Explore a dedicated collection built around colorful plants, omega-3-rich foods, whole grains, herbs, and practical everyday recipes.
           </Text>
           <Pressable
             style={({ pressed }) => [styles.bannerBtn, pressed && { opacity: 0.8 }]}
@@ -185,9 +389,9 @@ export default function HomeScreen() {
       <View style={styles.section}>
         <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Why Nourish</Text>
         {[
-          { icon: "leaf-outline" as const, title: "Research-Backed", body: "Every food recommendation is grounded in peer-reviewed science, not trends." },
-          { icon: "fitness-outline" as const, title: "Whole-Body Healing", body: "From joint support to gut health — food is your most powerful daily medicine." },
-          { icon: "heart-outline" as const, title: "Built for Real Life", body: "Practical 7-day plans you can actually follow, shop for, and enjoy." },
+          { icon: "earth-outline" as const, title: "Global by Design", body: "Discover everyday favorites alongside Ethiopian, East African, Mediterranean, Caribbean, and Asian-inspired meals." },
+          { icon: "options-outline" as const, title: "Made Personal", body: "Adjust servings, save favorites, note substitutions, and build a plan that fits your life." },
+          { icon: "heart-outline" as const, title: "Built for Real Life", body: "Practical recipes you can plan, shop for, cook, and genuinely enjoy." },
         ].map((item) => (
           <View key={item.title} style={[styles.whyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={[styles.whyIcon, { backgroundColor: colors.primary + "18" }]}>
@@ -203,8 +407,8 @@ export default function HomeScreen() {
 
       {/* CTA */}
       <View style={[styles.ctaSection, { backgroundColor: colors.primary }]}>
-        <Text style={styles.ctaTitle}>Ready to start your journey?</Text>
-        <Text style={styles.ctaSub}>Two plans. Full access. Natural healing.</Text>
+        <Text style={styles.ctaTitle}>Make this week delicious.</Text>
+        <Text style={styles.ctaSub}>Global inspiration, practical planning, and room to make every recipe yours.</Text>
         <Pressable
           style={({ pressed }) => [styles.ctaBtn, pressed && { opacity: 0.85 }]}
           onPress={() => router.push("/checkout")}
@@ -220,8 +424,12 @@ export default function HomeScreen() {
           The content in this app is for informational and educational purposes only. It is not intended to diagnose, treat, cure, or prevent any disease or medical condition, and is not a substitute for professional medical advice. Always consult a qualified healthcare provider before making dietary or lifestyle changes.
         </Text>
         <View style={styles.legalLinks}>
+          <Pressable onPress={() => router.push("/about" as never)}>
+            <Text style={[styles.legalLink, { color: colors.primary }]}>About the Founder</Text>
+          </Pressable>
+          <Text style={[styles.legalDot, { color: colors.mutedForeground }]}>·</Text>
           <Pressable onPress={() => router.push("/disclaimer" as never)}>
-            <Text style={[styles.legalLink, { color: colors.primary }]}>Medical Disclaimer & Copyright</Text>
+            <Text style={[styles.legalLink, { color: colors.primary }]}>Disclaimer</Text>
           </Pressable>
           <Text style={[styles.legalDot, { color: colors.mutedForeground }]}>·</Text>
           <Pressable onPress={() => router.push("/privacy" as never)}>
@@ -250,114 +458,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
     paddingBottom: 48,
     alignItems: "flex-start",
-  },
-  founderCard: {
-    marginHorizontal: 16,
-    marginTop: 20,
-    marginBottom: 4,
-    borderRadius: 20,
-    overflow: "hidden",
-    shadowColor: "#3a1a5a",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.22,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  founderCardInner: {
-    backgroundColor: "#2a1040",
-    padding: 24,
-    overflow: "hidden",
-  },
-  founderCircle1: {
-    position: "absolute",
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: "#7a4a8a",
-    opacity: 0.18,
-    top: -40,
-    right: -40,
-  },
-  founderCircle2: {
-    position: "absolute",
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: "#e8c97a",
-    opacity: 0.08,
-    bottom: -20,
-    left: 20,
-  },
-  founderTopRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginBottom: 14,
-  },
-  founderCrownWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(232,201,122,0.15)",
-    borderWidth: 1,
-    borderColor: "rgba(232,201,122,0.3)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  founderPill: {
-    backgroundColor: "rgba(232,201,122,0.15)",
-    borderWidth: 1,
-    borderColor: "rgba(232,201,122,0.35)",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 100,
-  },
-  founderPillText: {
-    color: "#e8c97a",
-    fontSize: 10,
-    fontFamily: "Inter_700Bold",
-    letterSpacing: 1.5,
-  },
-  founderCardTitle: {
-    color: "#ffffff",
-    fontSize: 28,
-    fontFamily: "Inter_700Bold",
-    letterSpacing: -0.3,
-    marginBottom: 2,
-  },
-  founderInnerLabel: {
-    color: "#e8c97a",
-    fontSize: 12,
-    fontFamily: "Inter_600SemiBold",
-    letterSpacing: 1.5,
-    textTransform: "uppercase",
-    marginBottom: 6,
-  },
-  founderCardSub: {
-    color: "rgba(255,255,255,0.6)",
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
-    lineHeight: 20,
-  },
-  founderDivider: {
-    height: 1,
-    backgroundColor: "rgba(232,201,122,0.2)",
-    marginVertical: 18,
-  },
-  founderPerks: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  founderPerk: {
-    alignItems: "center",
-    gap: 6,
-    flex: 1,
-  },
-  founderPerkText: {
-    color: "rgba(255,255,255,0.7)",
-    fontSize: 10,
-    fontFamily: "Inter_500Medium",
-    textAlign: "center",
   },
   riStudio: {
     color: "rgba(255,255,255,0.52)",
@@ -435,6 +535,31 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     lineHeight: 20,
     marginBottom: 20,
+  },
+  exploreCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    gap: 16,
+    marginBottom: 8,
+  },
+  exploreIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  exploreTitle: {
+    fontSize: 16,
+    fontFamily: "Inter_600SemiBold",
+    marginBottom: 4,
+  },
+  exploreSub: {
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
   },
   planGrid: {
     gap: 12,

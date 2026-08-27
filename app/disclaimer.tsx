@@ -46,7 +46,7 @@ export default function DisclaimerScreen() {
         <Section
           title="Not Medical Advice"
           colors={colors}
-          body="The content provided within the Nourish application — including but not limited to meal plans, food guides, wellness recommendations, shopping lists, and nutritional information — is intended solely for general informational and educational purposes. Nothing contained in this application constitutes, or is intended to constitute, medical advice, medical diagnosis, medical treatment, or a substitute for professional medical consultation, diagnosis, or treatment."
+          body={"The content provided within the Nourish application, including meal plans, food guides, wellness recommendations, shopping lists, and nutritional information, is intended solely for general informational and educational purposes. Nothing contained in this application constitutes, or is intended to constitute, medical advice, medical diagnosis, medical treatment, or a substitute for professional medical consultation, diagnosis, or treatment.\n\nThis includes all communications with Joseph Young or RI Studio LLC, whether through email support or any other channel. These communications reflect personal experience and are provided for educational and peer-support purposes only."}
         />
 
         <Section
@@ -58,7 +58,7 @@ export default function DisclaimerScreen() {
         <Section
           title="Not a Treatment for Disease"
           colors={colors}
-          body="Nourish is not designed, intended, or approved to diagnose, treat, cure, prevent, or mitigate any disease, medical condition, or health disorder — including but not limited to rheumatoid arthritis, lupus, inflammatory bowel disease, cardiovascular disease, diabetes, or any other chronic or acute illness. The anti-inflammatory meal plans and wellness content in this application are based on publicly available nutritional research and are presented for lifestyle and wellness support only."
+          body="Nourish is not designed, intended, or approved to diagnose, treat, cure, prevent, or mitigate any disease, medical condition, or health disorder, including rheumatoid arthritis, lupus, inflammatory bowel disease, cardiovascular disease, diabetes, or any other chronic or acute illness. The anti-inflammatory meal plans and wellness content in this application are based on publicly available nutritional research and are presented for lifestyle and wellness support only."
         />
 
         <Section
@@ -95,10 +95,10 @@ export default function DisclaimerScreen() {
             © {new Date().getFullYear()} RI Studio LLC. All rights reserved.
           </Text>
           <Text style={[styles.copyrightBody, { color: colors.mutedForeground, marginTop: 10 }]}>
-            All content within the Nourish application — including meal plans, food guides, nutritional content, wellness recommendations, written copy, design, graphics, and proprietary data — is the exclusive intellectual property of RI Studio LLC and is protected under United States and international copyright law.
+            All content within the Nourish application, including meal plans, food guides, nutritional content, wellness recommendations, written copy, design, graphics, and proprietary data, is the exclusive intellectual property of RI Studio LLC and is protected under United States and international copyright law.
           </Text>
           <Text style={[styles.copyrightBody, { color: colors.mutedForeground, marginTop: 10 }]}>
-            Unauthorized reproduction, distribution, modification, public display, or commercial use of any content from this application — in whole or in part — without the express prior written consent of RI Studio LLC is strictly prohibited and may result in civil and criminal liability.
+            Unauthorized reproduction, distribution, modification, public display, or commercial use of any content from this application, in whole or in part, without the express prior written consent of RI Studio LLC is strictly prohibited and may result in civil and criminal liability.
           </Text>
           <Text style={[styles.copyrightBody, { color: colors.mutedForeground, marginTop: 10 }]}>
             The "Nourish" name, "RI Studio" name and logo, and all associated trademarks, service marks, and trade dress are the property of RI Studio LLC.

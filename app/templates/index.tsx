@@ -28,7 +28,8 @@ export default function TemplatesScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : 0;
   const { isPurchased, tier, goToCheckout } = usePurchase();
-  const hasAccess = tier === "pro" || tier === "founder";
+  const hasAccess = tier === "pro" || tier === "founder" || tier === "legacy";
+  const hasTrackerAccess = tier === "essentials" || tier === "pro" || tier === "founder" || tier === "legacy";
 
   return (
     <ScrollView
@@ -50,7 +51,7 @@ export default function TemplatesScreen() {
           <View style={{ flex: 1 }}>
             <Text style={[styles.upgradeTitle, { color: colors.foreground }]}>Pro & Founder Circle Feature</Text>
             <Text style={[styles.upgradeSub, { color: colors.mutedForeground }]}>
-              Upgrade to Pro ($25/mo) or Founder Circle ($149/mo) to unlock all templates.
+              Upgrade to Pro ($19.99/mo) or Founder Circle ($49.99/mo) to unlock all templates.
             </Text>
           </View>
           <Pressable
@@ -119,6 +120,61 @@ export default function TemplatesScreen() {
             </View>
           </Pressable>
         ))}
+
+        {/* Inflammation Tracker card — all members */}
+        <Pressable
+          style={({ pressed }) => [
+            styles.card,
+            { backgroundColor: hasTrackerAccess ? "#1a1200" : colors.card, borderColor: hasTrackerAccess ? "rgba(201,162,39,0.35)" : colors.border },
+            !hasTrackerAccess && { opacity: 0.72 },
+            hasTrackerAccess && pressed && { opacity: 0.88, transform: [{ scale: 0.985 }] },
+          ]}
+          onPress={() => {
+            if (hasTrackerAccess) {
+              router.push("/tracker" as never);
+            } else {
+              goToCheckout();
+            }
+          }}
+        >
+          <View style={[styles.cardBar, { backgroundColor: "#c9a227" }]} />
+          <View style={styles.cardContent}>
+            <View style={styles.cardTop}>
+              <View style={[styles.iconWrap, { backgroundColor: "rgba(201,162,39,0.15)" }]}>
+                <Ionicons name="pulse" size={20} color="#c9a227" />
+              </View>
+              <View style={styles.badges}>
+                <View style={[styles.badge, { backgroundColor: "rgba(201,162,39,0.15)" }]}>
+                  <Text style={[styles.badgeText, { color: "#c9a227" }]}>LIVE</Text>
+                </View>
+                {!hasTrackerAccess && (
+                  <View style={[styles.badge, { backgroundColor: colors.muted }]}>
+                    <Ionicons name="lock-closed" size={10} color={colors.mutedForeground} />
+                    <Text style={[styles.badgeText, { color: colors.mutedForeground }]}>Members</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+            <Text style={[styles.cardTitle, { color: hasTrackerAccess ? "#fff" : colors.foreground }]}>Inflammation Tracker</Text>
+            <Text style={[styles.cardSub, { color: "#c9a227" }]}>Daily check-in tool</Text>
+            <Text style={[styles.cardDesc, { color: hasTrackerAccess ? "rgba(255,255,255,0.45)" : colors.mutedForeground }]}>
+              Log pain, mood, sleep, and flaring joints every day. Spot patterns over time and understand what's driving your inflammation.
+            </Text>
+            <View style={[styles.cardCta, { backgroundColor: hasTrackerAccess ? "#c9a227" : colors.muted }]}>
+              {hasTrackerAccess ? (
+                <>
+                  <Text style={[styles.cardCtaText, { color: "#0d0b00" }]}>Open Tracker</Text>
+                  <Ionicons name="arrow-forward" size={14} color="#0d0b00" />
+                </>
+              ) : (
+                <>
+                  <Ionicons name="lock-closed" size={13} color={colors.mutedForeground} />
+                  <Text style={[styles.cardCtaText, { color: colors.mutedForeground }]}>Members Only — Upgrade to Unlock</Text>
+                </>
+              )}
+            </View>
+          </View>
+        </Pressable>
       </View>
     </ScrollView>
   );

@@ -1,9 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { router } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
+  Image,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -19,7 +21,7 @@ import { usePurchase } from "@/contexts/PurchaseContext";
 import { foodReference, shoppingList } from "@/data/plans";
 import { TEMPLATE_ITEMS } from "@/data/templates";
 
-type TabKey = "foods" | "shopping" | "templates";
+type TabKey = "foods" | "shopping" | "templates" | "tracking";
 
 type CustomItem = { id: string; category: string; item: string; why: string };
 type CheckedMap = Record<string, boolean>;
@@ -35,8 +37,20 @@ export default function GuideScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : 0;
   const { tier, goToCheckout } = usePurchase();
-  const hasTemplates = tier === "pro" || tier === "founder";
+  const hasTemplates = tier === "pro" || tier === "founder" || tier === "legacy";
   const [activeTab, setActiveTab] = useState<TabKey>("foods");
+  const [profileName, setProfileName] = useState<string | null>(null);
+  const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
+
+  useEffect(() => {
+    AsyncStorage.getItem("nourish:user:profile:v1").then((raw) => {
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (p.name) setProfileName(p.name);
+        if (p.photoUri) setProfilePhoto(p.photoUri);
+      }
+    });
+  }, []);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const [checked, setChecked] = useState<CheckedMap>({});
@@ -49,19 +63,29 @@ export default function GuideScreen() {
   const [newItemWhy, setNewItemWhy] = useState("");
   const [newItemCategory, setNewItemCategory] = useState(shoppingList[0]?.category ?? "");
 
-  useEffect(() => {
-    const load = async () => {
-      const [c, cu, d] = await Promise.all([
-        AsyncStorage.getItem(CHECKED_KEY),
-        AsyncStorage.getItem(CUSTOM_KEY),
-        AsyncStorage.getItem(DELETED_KEY),
-      ]);
-      if (c) setChecked(JSON.parse(c));
-      if (cu) setCustomItems(JSON.parse(cu));
-      if (d) setDeletedKeys(JSON.parse(d));
-    };
-    load();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      const load = async () => {
+        const [c, cu, d] = await Promise.all([
+          AsyncStorage.getItem(CHECKED_KEY),
+          AsyncStorage.getItem(CUSTOM_KEY),
+          AsyncStorage.getItem(DELETED_KEY),
+        ]);
+        if (c) setChecked(JSON.parse(c));
+        if (cu) setCustomItems(JSON.parse(cu));
+        if (d) setDeletedKeys(JSON.parse(d));
+      };
+      load();
+    }, [])
+  );
+
+  const shoppingCategories = useMemo(() => {
+    const categories = shoppingList.map((section) => section.category);
+    customItems.forEach((item) => {
+      if (!categories.includes(item.category)) categories.push(item.category);
+    });
+    return categories;
+  }, [customItems]);
 
   const saveChecked = async (next: CheckedMap) => {
     setChecked(next);
@@ -150,7 +174,7 @@ export default function GuideScreen() {
     ]);
   };
 
-  const categories = shoppingList.map((c) => c.category);
+  const categories = shoppingCategories;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -166,12 +190,34 @@ export default function GuideScreen() {
           </Text>
         </View>
 
+        {/* Cookbook quick-access card — always visible */}
+        <Pressable
+          style={({ pressed }) => [styles.cookbookBanner, { backgroundColor: colors.card, borderColor: colors.border }, pressed && { opacity: 0.85 }]}
+          onPress={() => {
+            const hasCookbook = tier === "pro" || tier === "founder" || tier === "legacy";
+            if (!hasCookbook) { goToCheckout(); return; }
+            router.push("/cookbook" as never);
+          }}
+        >
+          <View style={[styles.cookbookIconWrap, { backgroundColor: "rgba(201,162,39,0.12)" }]}>
+            <Ionicons name="book-outline" size={22} color="#c9a227" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.cookbookBannerTitle, { color: colors.foreground }]}>My Cookbook</Text>
+            <Text style={[styles.cookbookBannerSub, { color: colors.mutedForeground }]}>Your personal saved recipe collection</Text>
+          </View>
+          {(tier === "pro" || tier === "founder" || tier === "legacy")
+            ? <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
+            : <Ionicons name="lock-closed" size={14} color={colors.mutedForeground} />}
+        </Pressable>
+
         {/* Tabs */}
         <View style={[styles.tabRow, { backgroundColor: colors.muted, marginHorizontal: 20 }]}>
           {([
             { key: "foods", label: "Food Guide" },
             { key: "shopping", label: "Shopping" },
             { key: "templates", label: "Templates" },
+            { key: "tracking", label: "Tracking" },
           ] as { key: TabKey; label: string }[]).map((tab) => (
             <Pressable
               key={tab.key}
@@ -233,16 +279,20 @@ export default function GuideScreen() {
               </Pressable>
             </View>
 
-            {shoppingList.map((cat) => {
-              const catCustom = customItems.filter((c) => c.category === cat.category);
-              const defaultItems = cat.items.filter((item) => !deletedKeys.includes(`${cat.category}:${item.item}`));
+            {shoppingCategories.map((category) => {
+              const defaultCategory = shoppingList.find((cat) => cat.category === category);
+              const catCustom = customItems.filter((c) => c.category === category);
+              const defaultItems = (defaultCategory?.items ?? []).filter((item) => !deletedKeys.includes(`${category}:${item.item}`));
+
+              if (defaultItems.length === 0 && catCustom.length === 0) return null;
+
               return (
-                <View key={cat.category} style={styles.sectionBlock}>
+                <View key={category} style={styles.sectionBlock}>
                   <View style={styles.catTitleRow}>
-                    <Text style={[styles.sectionTitle, { color: colors.foreground }]}>{cat.category}</Text>
+                    <Text style={[styles.sectionTitle, { color: colors.foreground }]}>{category}</Text>
                     <Pressable
                       style={[styles.addCatBtn, { backgroundColor: colors.primary + "18" }]}
-                      onPress={() => openAddModal(cat.category)}
+                      onPress={() => openAddModal(category)}
                     >
                       <Ionicons name="add" size={16} color={colors.primary} />
                       <Text style={[styles.addCatBtnText, { color: colors.primary }]}>Add</Text>
@@ -250,7 +300,7 @@ export default function GuideScreen() {
                   </View>
                   <View style={[styles.shoppingCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     {defaultItems.map((item, i) => {
-                      const key = `${cat.category}:${item.item}`;
+                      const key = `${category}:${item.item}`;
                       const isChecked = !!checked[key];
                       return (
                         <Pressable
@@ -344,7 +394,7 @@ export default function GuideScreen() {
                 <Ionicons name="star" size={18} color={colors.secondary} />
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.templateLockTitle, { color: colors.foreground }]}>Pro & Founder Circle Feature</Text>
-                  <Text style={[styles.templateLockSub, { color: colors.mutedForeground }]}>Upgrade to Pro ($25/mo) to unlock all premium templates.</Text>
+                  <Text style={[styles.templateLockSub, { color: colors.mutedForeground }]}>Upgrade to Pro ($19.99/mo) to unlock all premium templates.</Text>
                 </View>
                 <Pressable style={[styles.templateLockBtn, { backgroundColor: colors.secondary }]} onPress={goToCheckout}>
                   <Text style={styles.templateLockBtnText}>Upgrade</Text>
@@ -383,6 +433,137 @@ export default function GuideScreen() {
                 </View>
               </Pressable>
             ))}
+          </View>
+        )}
+
+        {/* Tracking */}
+        {activeTab === "tracking" && (
+          <View style={styles.content}>
+
+            {/* Profile card */}
+            <Pressable
+              style={({ pressed }) => [styles.kitchenCard, pressed && { opacity: 0.85 }]}
+              onPress={() => router.push("/tracking-profile" as never)}
+            >
+              <View style={[styles.kitchenIconWrap, { backgroundColor: "rgba(61,107,82,0.10)" }]}>
+                {profilePhoto ? (
+                  <Image source={{ uri: profilePhoto }} style={styles.profileThumb} />
+                ) : (
+                  <Ionicons name="person-circle-outline" size={26} color="#3d6b52" />
+                )}
+              </View>
+              <View style={styles.kitchenCardBody}>
+                <View style={styles.kitchenCardRow}>
+                  <Text style={[styles.kitchenCardTitle, { color: colors.foreground }]}>
+                    {profileName ? profileName : "My Profile"}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
+                </View>
+                <Text style={[styles.kitchenCardSub, { color: colors.mutedForeground }]}>
+                  {profileName
+                    ? "Edit your name, photo, and contact info."
+                    : "Add your name, photo, and contact info. Stored on-device only."}
+                </Text>
+              </View>
+            </Pressable>
+
+            {/* Nutrition Tracker */}
+            <Pressable
+              style={({ pressed }) => [styles.kitchenCard, pressed && { opacity: 0.85 }]}
+              onPress={() => {
+                const hasTracker = tier === "pro" || tier === "founder" || tier === "legacy";
+                if (!hasTracker) { goToCheckout(); return; }
+                router.push("/nutrition-tracker" as never);
+              }}
+            >
+              <View style={[styles.kitchenIconWrap, { backgroundColor: "rgba(76,175,130,0.12)" }]}>
+                <Ionicons name="bar-chart-outline" size={26} color="#4caf82" />
+              </View>
+              <View style={styles.kitchenCardBody}>
+                <View style={styles.kitchenCardRow}>
+                  <Text style={[styles.kitchenCardTitle, { color: colors.foreground }]}>Nutrition Tracker</Text>
+                  {(tier === "pro" || tier === "founder" || tier === "legacy")
+                    ? <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
+                    : <Ionicons name="lock-closed" size={15} color={colors.mutedForeground} />}
+                </View>
+                <Text style={[styles.kitchenCardSub, { color: colors.mutedForeground }]}>
+                   Log meals by type, track estimated macros, and review your daily nutrition habits.
+                </Text>
+                <View style={[styles.kitchenTierBadge, { backgroundColor: "rgba(76,175,130,0.1)", borderColor: "rgba(76,175,130,0.35)" }]}>
+                  <Text style={[styles.kitchenTierText, { color: "#4caf82" }]}>Pro · Founder · Legacy</Text>
+                </View>
+              </View>
+            </Pressable>
+
+            {/* Inflammation Tracker */}
+            <Pressable
+              style={({ pressed }) => [styles.kitchenCard, pressed && { opacity: 0.85 }]}
+              onPress={() => {
+                const hasTracker = tier === "essentials" || tier === "pro" || tier === "founder" || tier === "legacy";
+                if (!hasTracker) { goToCheckout(); return; }
+                router.push("/tracker" as never);
+              }}
+            >
+              <View style={[styles.kitchenIconWrap, { backgroundColor: "rgba(217,83,79,0.10)" }]}>
+                <Ionicons name="pulse-outline" size={26} color="#d9534f" />
+              </View>
+              <View style={styles.kitchenCardBody}>
+                <View style={styles.kitchenCardRow}>
+                  <Text style={[styles.kitchenCardTitle, { color: colors.foreground }]}>Inflammation Tracker</Text>
+                  {(tier === "essentials" || tier === "pro" || tier === "founder" || tier === "legacy")
+                    ? <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
+                    : <Ionicons name="lock-closed" size={15} color={colors.mutedForeground} />}
+                </View>
+                <Text style={[styles.kitchenCardSub, { color: colors.mutedForeground }]}>
+                  Track daily pain, mood, and sleep. Spot patterns over time and share with your care team.
+                </Text>
+                <View style={styles.comingSoonBadge}>
+                  <Ionicons name="watch-outline" size={10} color="#7b9fd4" />
+                  <Text style={styles.comingSoonBadgeText}>Apple Health Sleep Sync — coming soon</Text>
+                </View>
+                <View style={[styles.kitchenTierBadge, { backgroundColor: "rgba(217,83,79,0.08)", borderColor: "rgba(217,83,79,0.25)", marginTop: 6 }]}>
+                  <Text style={[styles.kitchenTierText, { color: "#d9534f" }]}>All members</Text>
+                </View>
+              </View>
+            </Pressable>
+
+            {/* Health Report */}
+            <Pressable
+              style={({ pressed }) => [styles.kitchenCard, pressed && { opacity: 0.85 }]}
+              onPress={() => {
+                const hasReport = tier === "pro" || tier === "founder" || tier === "legacy";
+                if (!hasReport) { goToCheckout(); return; }
+                router.push("/health-report" as never);
+              }}
+            >
+              <View style={[styles.kitchenIconWrap, { backgroundColor: "rgba(74,114,184,0.10)" }]}>
+                <Ionicons name="document-text-outline" size={26} color="#4a72b8" />
+              </View>
+              <View style={styles.kitchenCardBody}>
+                <View style={styles.kitchenCardRow}>
+                  <Text style={[styles.kitchenCardTitle, { color: colors.foreground }]}>Health Reports</Text>
+                  {(tier === "pro" || tier === "founder" || tier === "legacy")
+                    ? <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
+                    : <Ionicons name="lock-closed" size={15} color={colors.mutedForeground} />}
+                </View>
+                <Text style={[styles.kitchenCardSub, { color: colors.mutedForeground }]}>
+                  Generate daily, weekly, or monthly reports from your tracking data. Export as PDF, plain text, or Markdown.
+                </Text>
+                <View style={[styles.kitchenTierBadge, { backgroundColor: "rgba(74,114,184,0.08)", borderColor: "rgba(74,114,184,0.2)" }]}>
+                  <Text style={[styles.kitchenTierText, { color: "#4a72b8" }]}>Pro · Founder · Legacy</Text>
+                </View>
+              </View>
+            </Pressable>
+
+            {/* Privacy notice */}
+            <View style={styles.privacyNotice}>
+              <Ionicons name="lock-closed-outline" size={13} color="#3d6b52" />
+              <Text style={styles.privacyNoticeText}>
+                All tracking data is stored on your device and on secure Nourish servers. It is never sold or shared. You own your data.
+              </Text>
+            </View>
+
+
           </View>
         )}
 
@@ -519,4 +700,25 @@ const styles = StyleSheet.create({
   templateCardSub: { fontSize: 11, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.5 },
   disclaimerBar: { marginHorizontal: 16, marginTop: 12, marginBottom: 24, padding: 14, borderRadius: 10, backgroundColor: "rgba(0,0,0,0.04)" },
   disclaimerText: { fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 18, textAlign: "center", opacity: 0.6 },
+  kitchenCard: { backgroundColor: "#fffef8", borderRadius: 16, borderWidth: 1, borderColor: "rgba(201,162,39,0.25)", marginBottom: 12, flexDirection: "row", alignItems: "flex-start", padding: 16, gap: 14 },
+  kitchenIconWrap: { width: 52, height: 52, borderRadius: 14, alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" },
+  profileThumb: { width: 52, height: 52, borderRadius: 14 },
+  kitchenCardBody: { flex: 1 },
+  kitchenCardRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 },
+  kitchenCardTitle: { fontSize: 16, fontFamily: "Inter_600SemiBold" },
+  kitchenCardSub: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 19, marginBottom: 10 },
+  kitchenTierBadge: { alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
+  kitchenTierText: { fontSize: 11, fontFamily: "Inter_600SemiBold", letterSpacing: 0.4 },
+  // Cookbook banner (top of guide)
+  cookbookBanner: { flexDirection: "row", alignItems: "center", gap: 12, marginHorizontal: 16, marginBottom: 14, padding: 14, borderRadius: 14, borderWidth: 1 },
+  cookbookIconWrap: { width: 42, height: 42, borderRadius: 11, alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  cookbookBannerTitle: { fontSize: 14, fontFamily: "Inter_600SemiBold", marginBottom: 1 },
+  cookbookBannerSub: { fontSize: 12, fontFamily: "Inter_400Regular" },
+  // Tracking tab extras
+  comingSoonBadge: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 2 },
+  comingSoonBadgeText: { fontSize: 10, fontFamily: "Inter_500Medium", color: "#7b9fd4" },
+  privacyNotice: { flexDirection: "row", alignItems: "flex-start", gap: 8, padding: 12, backgroundColor: "rgba(61,107,82,0.06)", borderRadius: 10, borderWidth: 1, borderColor: "rgba(61,107,82,0.12)", marginBottom: 16 },
+  privacyNoticeText: { flex: 1, fontSize: 11, fontFamily: "Inter_400Regular", color: "#3d6b52", lineHeight: 17 },
+  suggestBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 13, borderRadius: 12, borderWidth: 1, marginBottom: 8 },
+  suggestBtnText: { fontSize: 14, fontFamily: "Inter_500Medium" },
 });

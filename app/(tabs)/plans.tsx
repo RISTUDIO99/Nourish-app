@@ -35,8 +35,8 @@ export default function PlansScreen() {
         <Text style={[styles.headerTitle, { color: colors.foreground }]}>Meal Plans</Text>
         <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
           {isPurchased
-            ? "All three 7-day plans — full access."
-            : "One plan free. Unlock all three with full access."}
+            ? "All four 7-day plans — full access."
+            : "One plan free. Unlock all four with full access."}
         </Text>
       </View>
 
@@ -44,7 +44,7 @@ export default function PlansScreen() {
         <View style={[styles.trialBanner, { backgroundColor: colors.secondary + "18", borderColor: colors.secondary + "40" }]}>
           <Ionicons name="star-outline" size={16} color={colors.secondary} />
           <Text style={[styles.trialText, { color: colors.secondary }]}>
-            Free preview: Grass-Fed Meat Plan · Upgrade to unlock all 3 plans
+            Free preview: Grass-Fed Meat Plan · Upgrade to unlock all 4 plans
           </Text>
         </View>
       )}
@@ -136,8 +136,8 @@ export default function PlansScreen() {
           onPress={goToCheckout}
         >
           <View>
-            <Text style={styles.upgradeBarTitle}>Unlock All 3 Plans</Text>
-            <Text style={styles.upgradeBarSub}>Starting at $9/mo · Cancel anytime</Text>
+            <Text style={styles.upgradeBarTitle}>Unlock All 4 Plans</Text>
+            <Text style={styles.upgradeBarSub}>Starting at $9.99/mo · Cancel anytime</Text>
           </View>
           <Ionicons name="arrow-forward-circle" size={28} color="#fff" />
         </Pressable>

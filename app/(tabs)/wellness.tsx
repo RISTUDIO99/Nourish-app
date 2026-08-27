@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React from "react";
 import {
+  Image,
   ImageBackground,
   Linking,
   Platform,
@@ -11,6 +12,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { WebView } from "react-native-webview";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { wellnessProducts } from "@/data/wellness";
@@ -91,6 +93,9 @@ export default function WellnessScreen() {
 
         {wellnessProducts.map((product) => (
           <View key={product.id} style={[styles.productCard, { backgroundColor: colors.card, borderColor: colors.secondary }]}>
+            {product.heroImage && (
+              <Image source={product.heroImage} style={styles.heroImage} resizeMode="cover" />
+            )}
             {product.badge && (
               <View style={[styles.productBadge, { backgroundColor: colors.secondary }]}>
                 <Text style={styles.productBadgeText}>{product.badge}</Text>
@@ -98,11 +103,37 @@ export default function WellnessScreen() {
             )}
             <View style={styles.categoryRow}>
               <Ionicons name="hardware-chip-outline" size={13} color={colors.mutedForeground} />
-              <Text style={[styles.categoryText, { color: colors.mutedForeground }]}>Recovery Device</Text>
+              <Text style={[styles.categoryText, { color: colors.mutedForeground }]}>
+                {product.categoryLabel ?? "Recovery Device"}
+              </Text>
             </View>
             <Text style={[styles.productName, { color: colors.foreground }]}>{product.name}</Text>
             <Text style={[styles.productTagline, { color: colors.secondary }]}>{product.tagline}</Text>
             <Text style={[styles.productDesc, { color: colors.mutedForeground }]}>{product.description}</Text>
+
+            {product.videoUrl && Platform.OS !== "web" && (
+              <View style={styles.videoWrap}>
+                <WebView
+                  source={{ uri: product.videoUrl }}
+                  style={styles.video}
+                  allowsFullscreenVideo
+                  javaScriptEnabled
+                  mediaPlaybackRequiresUserAction
+                />
+              </View>
+            )}
+
+            {product.discountCode && (
+              <View style={[styles.discountRow, { backgroundColor: colors.primary + "12", borderColor: colors.primary + "30" }]}>
+                <Ionicons name="pricetag-outline" size={14} color={colors.primary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.discountNote, { color: colors.mutedForeground }]}>{product.discountNote}</Text>
+                  <View style={styles.discountCodeWrap}>
+                    <Text style={[styles.discountCode, { color: colors.primary }]}>{product.discountCode}</Text>
+                  </View>
+                </View>
+              </View>
+            )}
 
             <Text style={[styles.physicalNote, { color: colors.mutedForeground }]}>
               Physical device · Sold externally · Not an in-app purchase
@@ -116,9 +147,11 @@ export default function WellnessScreen() {
               <Ionicons name="arrow-forward" size={15} color="#fff" />
             </Pressable>
 
-            <Text style={[styles.productUrlHint, { color: colors.mutedForeground }]}>
-              theonedevice.com/theraroad
-            </Text>
+            {product.urlHint && (
+              <Text style={[styles.productUrlHint, { color: colors.mutedForeground }]}>
+                {product.urlHint}
+              </Text>
+            )}
           </View>
         ))}
 
@@ -130,7 +163,24 @@ export default function WellnessScreen() {
           </Text>
         </View>
 
+        {/* Suggest a Feature */}
+        <Pressable
+          style={({ pressed }) => [styles.suggestBtn, { borderColor: colors.border }, pressed && { opacity: 0.75 }]}
+          onPress={() => Linking.openURL("mailto:Support@ristudio.app?subject=Feature%20Suggestion%20-%20Nourish&body=Hi%2C%20I%20have%20a%20feature%20suggestion%20for%20Nourish%3A%0A%0A")}
+        >
+          <Ionicons name="bulb-outline" size={17} color={colors.mutedForeground} />
+          <Text style={[styles.suggestBtnText, { color: colors.mutedForeground }]}>Suggest a Feature</Text>
+        </Pressable>
+
         <View style={[styles.legalRow, { borderTopColor: colors.border }]}>
+          <Pressable
+            style={({ pressed }) => [styles.legalLink, pressed && { opacity: 0.6 }]}
+            onPress={() => router.push("/about" as never)}
+          >
+            <Ionicons name="person-circle-outline" size={13} color={colors.mutedForeground} />
+            <Text style={[styles.legalLinkText, { color: colors.mutedForeground }]}>About the Founder</Text>
+          </Pressable>
+          <Text style={[styles.legalDot, { color: colors.mutedForeground }]}>·</Text>
           <Pressable
             style={({ pressed }) => [styles.legalLink, pressed && { opacity: 0.6 }]}
             onPress={() => router.push("/privacy" as never)}
@@ -187,6 +237,13 @@ const styles = StyleSheet.create({
   productBtnText: { color: "#fff", fontSize: 15, fontFamily: "Inter_600SemiBold" },
   productUrlHint: { fontSize: 11, fontFamily: "Inter_400Regular", textAlign: "center", opacity: 0.6 },
   physicalNote: { fontSize: 11, fontFamily: "Inter_400Regular", textAlign: "center", marginBottom: 10, opacity: 0.7 },
+  heroImage: { width: "100%", height: 180, borderRadius: 10, marginBottom: 16, overflow: "hidden" },
+  videoWrap: { width: "100%", height: 200, borderRadius: 10, overflow: "hidden", marginBottom: 16, backgroundColor: "#000" },
+  video: { flex: 1 },
+  discountRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, padding: 12, borderRadius: 10, borderWidth: 1, marginBottom: 14 },
+  discountNote: { fontSize: 12, fontFamily: "Inter_400Regular", marginBottom: 4 },
+  discountCodeWrap: { alignSelf: "flex-start" },
+  discountCode: { fontSize: 15, fontFamily: "Inter_700Bold", letterSpacing: 1.5 },
   comingSoon: { borderRadius: 14, borderWidth: 1, borderStyle: "dashed", padding: 24, alignItems: "center", gap: 8 },
   comingSoonTitle: { fontSize: 16, fontFamily: "Inter_600SemiBold", marginTop: 4 },
   comingSoonSub: { fontSize: 13, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 19 },
@@ -196,4 +253,6 @@ const styles = StyleSheet.create({
   legalDot: { fontSize: 12 },
   legalCopy: { fontSize: 11, fontFamily: "Inter_400Regular", textAlign: "center", flex: 1 },
   copyrightRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingTop: 12, borderTopWidth: 1, marginTop: 10, marginHorizontal: 8 },
+  suggestBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 13, borderRadius: 12, borderWidth: 1, marginBottom: 24, marginHorizontal: 24 },
+  suggestBtnText: { fontSize: 14, fontFamily: "Inter_500Medium" },
 });

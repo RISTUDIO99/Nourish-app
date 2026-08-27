@@ -40,7 +40,7 @@ export default function PrivacyScreen() {
     },
     {
       title: "Your Rights",
-      body: "You may delete all locally stored data at any time by uninstalling the app. For any privacy-related requests or questions, contact us at Support-josephy@proton.me.",
+      body: "You may delete all locally stored data at any time by uninstalling the app. For any privacy-related requests or questions, contact us at Support@ristudio.app.",
     },
     {
       title: "Changes to This Policy",
@@ -48,7 +48,7 @@ export default function PrivacyScreen() {
     },
     {
       title: "Contact",
-      body: "RI Studio's LLC\nSupport-josephy@proton.me",
+      body: "RI Studio's LLC\nSupport@ristudio.app",
     },
   ];
 

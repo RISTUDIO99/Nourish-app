@@ -19,6 +19,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: "list.bullet.rectangle", selected: "list.bullet.rectangle.fill" }} />
         <Label>Plans</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="library">
+        <Icon sf={{ default: "magnifyingglass", selected: "magnifyingglass" }} />
+        <Label>Explore</Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="guide">
         <Icon sf={{ default: "book", selected: "book.fill" }} />
         <Label>Guide</Label>
@@ -89,6 +93,18 @@ function ClassicTabLayout() {
         }}
       />
       <Tabs.Screen
+        name="library"
+        options={{
+          title: "Explore",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="magnifyingglass" tintColor={color} size={22} />
+            ) : (
+              <Ionicons name="search" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
         name="guide"
         options={{
           title: "Guide",
@@ -117,8 +133,7 @@ function ClassicTabLayout() {
 }
 
 export default function TabLayout() {
-  if (isLiquidGlassAvailable()) {
-    return <NativeTabLayout />;
-  }
+  // Force ClassicTabLayout — NativeTabs (unstable) breaks React context
+  // propagation for PurchaseContext across tab screens.
   return <ClassicTabLayout />;
 }
