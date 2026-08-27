@@ -44,7 +44,8 @@
           "healthSharePermission": "Nourish uses your Apple Health sleep data to automatically fill in your nightly sleep hours in the Inflammation Tracker.",
           "healthUpdatePermission": "Nourish does not write data to Apple Health."
         }
-      ]
+      ],
+      "./plugins/withNoPushEntitlement.js"
     ],
     "experiments": {
       "typedRoutes": true,
