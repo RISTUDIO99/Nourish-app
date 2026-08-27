@@ -2,6 +2,9 @@
   "name": "nourish-app",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": ">=20.19.4"
+  },
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
