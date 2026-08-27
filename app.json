@@ -35,11 +35,11 @@
       "favicon": "./assets/images/icon.png"
     },
     "plugins": [
-      "./plugins/withNoPushEntitlement.js",
       "expo-router",
       "expo-font",
       "expo-web-browser",
       "expo-notifications",
+      "./plugins/withNoPushEntitlement.js",
       [
         "react-native-health",
         {

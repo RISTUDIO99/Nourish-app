@@ -15,6 +15,7 @@ ios/
 android/
 
 # Signing / certificates — never commit these
+google-service-account.json
 *.orig.*
 *.jks
 *.p8
