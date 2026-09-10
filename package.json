@@ -1,24 +1,33 @@
 {
   "name": "nourish-app",
-  "version": "1.0.0",
+  "version": "1.4.0",
   "private": true,
-  "engines": {
-    "node": ">=20.19.4"
-  },
   "main": "expo-router/entry",
+  "expo": {
+    "autolinking": {
+      "ios": {
+        "exclude": [
+          "@clerk/expo"
+        ]
+      }
+    }
+  },
   "scripts": {
+    "dev": "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY=$CLERK_PUBLISHABLE_KEY EXPO_PACKAGER_PROXY_URL=https://$REPLIT_EXPO_DEV_DOMAIN EXPO_PUBLIC_DOMAIN=$REPLIT_DEV_DOMAIN EXPO_PUBLIC_REPL_ID=$REPL_ID REACT_NATIVE_PACKAGER_HOSTNAME=$REPLIT_DEV_DOMAIN pnpm exec expo start --localhost --port $PORT",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "expo start",
     "ios": "expo run:ios",
     "android": "expo run:android",
-    "web": "expo start --web",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "web": "expo start --web"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
+    "@clerk/testing": "^2.2.33",
     "@expo-google-fonts/inter": "^0.4.0",
     "@expo/cli": "54.0.23",
     "@expo/ngrok": "^4.1.0",
     "@expo/vector-icons": "^15.0.3",
+    "@playwright/test": "^1.62.1",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@stardazed/streams-text-encoding": "^1.0.2",
     "@tanstack/react-query": "^5.90.21",
@@ -26,9 +35,11 @@
     "@types/react-dom": "~19.1.7",
     "@ungap/structured-clone": "^1.3.0",
     "babel-plugin-react-compiler": "^19.0.0-beta-e993439-20250117",
-    "expo": "~54.0.37",
+    "expo": "~54.0.27",
+    "expo-auth-session": "~7.0.11",
     "expo-blur": "~15.0.8",
-    "expo-constants": "~18.0.14",
+    "expo-constants": "~18.0.11",
+    "expo-crypto": "~15.0.9",
     "expo-font": "~14.0.10",
     "expo-glass-effect": "~0.1.4",
     "expo-haptics": "~15.0.8",
@@ -38,6 +49,7 @@
     "expo-linking": "~8.0.10",
     "expo-location": "~19.0.8",
     "expo-router": "~6.0.17",
+    "expo-secure-store": "~15.0.8",
     "expo-splash-screen": "~31.0.12",
     "expo-status-bar": "~3.0.9",
     "expo-symbols": "~1.0.8",
@@ -55,17 +67,15 @@
     "react-native-web": "^0.21.0",
     "react-native-worklets": "0.5.1",
     "typescript": "~5.9.2",
-    "zod": "^3.25.76",
+    "zod": "catalog:",
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
-    "expo-av": "~16.0.8",
-    "expo-file-system": "^19.0.24",
-    "expo-notifications": "~0.32.17",
-    "expo-print": "^15.0.8",
-    "expo-sharing": "^14.0.8",
-    "react-native-health": "^1.19.0",
-    "react-native-purchases": "^10.4.0",
-    "react-native-webview": "^13.15.0"
+    "@clerk/expo": "^4.6.5",
+    "@revenuecat/purchases-typescript-internal": "18.33.1",
+    "react-native-purchases": "^10.9.0"
+  },
+  "engines": {
+    "node": ">=20.19.4"
   }
 }
