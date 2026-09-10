@@ -125,8 +125,24 @@ jobs:
           from pathlib import Path
           import re
 
-          path = Path("android/app/build.gradle")
+          path = Path("android/app/build.gradle") 
           text = path.read_text()
+
+          packaging_marker = "android {\n"
+          packaging_block = """
+              packaging {
+                  resources {
+                      excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+                  }
+              }
+          """
+          if packaging_marker not in text:
+              raise SystemExit("Could not find Android configuration block")
+          text = text.replace(
+              packaging_marker,
+              packaging_marker + packaging_block,
+              1,
+          
 
           signing_block = """
                   release {
