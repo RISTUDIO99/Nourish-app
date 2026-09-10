@@ -2,6 +2,9 @@ name: Build Nourish Android Release
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - release/android-1.4.0-v6
 
 permissions:
   contents: read
