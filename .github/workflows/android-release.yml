@@ -172,11 +172,24 @@ jobs:
               | awk -F'SHA1: ' '/SHA1:/{print $2; exit}'
           )"
           test "$ACTUAL" = "$EXPECTED"
-
+          
       - name: Build the signed App Bundle
         working-directory: android
-        run: ./gradlew app:bundleRelease --no-daemon --max-workers=2 --stacktrace
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew app:bundleRelease --no-daemon --max-workers=2 --stacktrace \
+            2>&1 | tee ../gradle-build.log
 
+      - name: Upload Gradle failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nourish-android-gradle-failure
+          path: gradle-build.log
+          if-no-files-found: warn
+          retention-days: 7
+     
       - name: Verify and name the release bundle
         shell: bash
         run: |
