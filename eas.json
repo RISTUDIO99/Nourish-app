@@ -1,7 +1,7 @@
 {
   "cli": {
     "version": ">= 16.0.0",
-    "appVersionSource": "remote"
+    "appVersionSource": "local"
   },
   "build": {
     "development": {
@@ -16,7 +16,7 @@
     },
     "production": {
       "node": "20.19.4",
-      "autoIncrement": true,
+      "autoIncrement": false,
       "ios": {
         "image": "macos-sequoia-15.6-xcode-26.0",
         "buildConfiguration": "Release"
