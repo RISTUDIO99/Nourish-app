@@ -136,9 +136,9 @@ jobs:
                   }
               }
           """
-          if packaging_marker not in text:
+                   if packaging_marker not in text:
               raise SystemExit("Could not find Android configuration block")
-                   text = text.replace(
+          text = text.replace(
               packaging_marker,
               packaging_marker + packaging_block,
               1,
@@ -146,8 +146,6 @@ jobs:
 
           signing_block = """
           
-
-          signing_block = """
                   release {
                       storeFile file("nourish-upload-key.jks")
                       storePassword System.getenv("NOURISH_UPLOAD_STORE_PASSWORD")
