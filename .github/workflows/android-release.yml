@@ -138,10 +138,13 @@ jobs:
           """
           if packaging_marker not in text:
               raise SystemExit("Could not find Android configuration block")
-          text = text.replace(
+                   text = text.replace(
               packaging_marker,
               packaging_marker + packaging_block,
               1,
+          )
+
+          signing_block = """
           
 
           signing_block = """
