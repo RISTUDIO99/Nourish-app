@@ -125,7 +125,7 @@ jobs:
           from pathlib import Path
           import re
 
-          path = Path("android/app/build.gradle") 
+          path = Path("android/app/build.gradle")
           text = path.read_text()
 
           packaging_marker = "android {\n"
@@ -136,7 +136,7 @@ jobs:
                   }
               }
           """
-                   if packaging_marker not in text:
+          if packaging_marker not in text:
               raise SystemExit("Could not find Android configuration block")
           text = text.replace(
               packaging_marker,
@@ -145,7 +145,6 @@ jobs:
           )
 
           signing_block = """
-          
                   release {
                       storeFile file("nourish-upload-key.jks")
                       storePassword System.getenv("NOURISH_UPLOAD_STORE_PASSWORD")
@@ -189,7 +188,7 @@ jobs:
               | awk -F'SHA1: ' '/SHA1:/{print $2; exit}'
           )"
           test "$ACTUAL" = "$EXPECTED"
-          
+
       - name: Build the signed App Bundle
         working-directory: android
         shell: bash
@@ -197,6 +196,38 @@ jobs:
           set -o pipefail
           ./gradlew app:bundleRelease --no-daemon --max-workers=2 --stacktrace \
             2>&1 | tee ../gradle-build.log
+
+      - name: Report the Gradle failure
+        if: failure()
+        shell: bash
+        run: |
+          if [ ! -s gradle-build.log ]; then
+            echo "::error title=Gradle build failure::Gradle exited without producing a diagnostic log."
+            exit 0
+          fi
+
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          lines = Path("gradle-build.log").read_text(errors="replace").splitlines()
+          patterns = re.compile(
+              r"FAILURE:|What went wrong:|Execution failed for task|"
+              r"(^|\\s)error:|Caused by:|Could not |No space left|"
+              r"OutOfMemory|BUILD FAILED",
+              re.IGNORECASE,
+          )
+          matches = [line.strip() for line in lines if patterns.search(line)]
+          selected = matches[-40:] or lines[-40:]
+
+          for line in selected:
+              escaped = (
+                  line.replace("%", "%25")
+                  .replace("\\r", "%0D")
+                  .replace("\\n", "%0A")
+              )
+              print(f"::error title=Gradle build failure::{escaped[:4000]}")
+          PY
 
       - name: Upload Gradle failure diagnostics
         if: failure()
@@ -206,7 +237,7 @@ jobs:
           path: gradle-build.log
           if-no-files-found: warn
           retention-days: 7
-     
+
       - name: Verify and name the release bundle
         shell: bash
         run: |
