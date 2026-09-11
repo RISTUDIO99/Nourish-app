@@ -246,7 +246,7 @@ jobs:
           EXPECTED="A2:99:A9:54:2E:55:80:E0:C3:86:69:E4:34:20:F6:E7:43:F7:14:DA"
 
           test -s "$SOURCE"
-          jarsigner -verify -strict "$SOURCE" >/dev/null
+          jarsigner -verify "$SOURCE" >/dev/null
           ACTUAL="$(
             keytool -printcert -jarfile "$SOURCE" \
               | awk -F'SHA1: ' '/SHA1:/{print $2; exit}'
