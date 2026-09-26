@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { useUser } from '@clerk/expo';
 import { Platform } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -18,6 +18,19 @@ export const REVENUECAT_OFFERING_IDENTIFIER =
   process.env.EXPO_PUBLIC_REVENUECAT_OFFERING_ID ?? 'default';
 
 let isConfigured = false;
+const MEMBERSHIP_TIMEOUT_MS = 12_000;
+
+async function withMembershipDeadline<T>(operation: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('Membership store did not respond. Please try again.')), MEMBERSHIP_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([operation, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 function getApiKey() {
   if (__DEV__ || Platform.OS === 'web' || Constants.executionEnvironment === 'storeClient') {
@@ -85,73 +98,133 @@ export function getSubscriptionAccess(customerInfo?: CustomerInfo): Subscription
 }
 
 function useSubscriptionContext(enabled: boolean) {
-  const { user } = useUser();
+  const { isLoaded, user } = useUser();
   const queryClient = useQueryClient();
+  const identitySyncRef = useRef<Promise<void>>(Promise.resolve());
+  const previousUserIdRef = useRef<string | null>(null);
+  const [identity, setIdentity] = useState<{
+    userId: string | null;
+    status: 'syncing' | 'ready' | 'error';
+    error: Error | null;
+  }>({ userId: null, status: 'syncing', error: null });
+  const [retryIdentity, setRetryIdentity] = useState(0);
   useEffect(() => {
-    if (!enabled) return;
-    if (!user?.id) {
-      void Purchases.logOut().finally(() => queryClient.clear());
-      return;
-    }
-    void Purchases.logIn(user.id).then(({ customerInfo }) => {
-      queryClient.setQueryData(['revenuecat', 'customer-info'], customerInfo);
-      queryClient.invalidateQueries({ queryKey: ['revenuecat', 'app-user-id'] });
-    });
-  }, [enabled, queryClient, user?.id]);
+    if (!enabled || !isLoaded) return;
+    let active = true;
+    const userId = user?.id ?? null;
+    if (previousUserIdRef.current && previousUserIdRef.current !== userId) queryClient.clear();
+    previousUserIdRef.current = userId;
+    setIdentity({ userId, status: 'syncing', error: null });
+    const timer = setTimeout(() => {
+      if (active) {
+        setIdentity({
+          userId,
+          status: 'error',
+          error: new Error('Membership store did not respond. Please try again.'),
+        });
+      }
+    }, MEMBERSHIP_TIMEOUT_MS);
+    identitySyncRef.current = identitySyncRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        if (!active) return;
+        if (!userId) {
+          const currentId = await Purchases.getAppUserID();
+          if (!currentId.startsWith('$RCAnonymousID:')) await Purchases.logOut();
+        } else {
+          const { customerInfo } = await Purchases.logIn(userId);
+          if (active) queryClient.setQueryData(['revenuecat', 'customer-info', userId], customerInfo);
+        }
+        if (active) setIdentity({ userId, status: 'ready', error: null });
+      })
+      .catch((error) => {
+        console.warn('Unable to synchronize membership account.', error);
+        if (active) setIdentity({
+          userId,
+          status: 'error',
+          error: error instanceof Error ? error : new Error('Membership account is unavailable.'),
+        });
+      })
+      .finally(() => clearTimeout(timer));
+    return () => { active = false; clearTimeout(timer); };
+  }, [enabled, isLoaded, queryClient, retryIdentity, user?.id]);
+  const userId = user?.id ?? null;
+  const identityReady = enabled && isLoaded && !!userId &&
+    identity.userId === userId && identity.status === 'ready';
   const customerInfoQuery = useQuery({
-    queryKey: ['revenuecat', 'customer-info'],
-    queryFn: () => Purchases.getCustomerInfo(),
-    enabled,
+    queryKey: ['revenuecat', 'customer-info', userId],
+    queryFn: () => withMembershipDeadline(Purchases.getCustomerInfo()),
+    enabled: identityReady,
+    retry: 1,
     staleTime: 60_000,
   });
 
   const offeringsQuery = useQuery({
-    queryKey: ['revenuecat', 'offerings'],
-    queryFn: () => Purchases.getOfferings(),
-    enabled,
+    queryKey: ['revenuecat', 'offerings', userId],
+    queryFn: () => withMembershipDeadline(Purchases.getOfferings()),
+    enabled: identityReady,
+    retry: 1,
     staleTime: 300_000,
   });
 
   const appUserIdQuery = useQuery({
-    queryKey: ['revenuecat', 'app-user-id'],
-    queryFn: () => Purchases.getAppUserID(),
-    enabled,
+    queryKey: ['revenuecat', 'app-user-id', userId],
+    queryFn: () => withMembershipDeadline(Purchases.getAppUserID()),
+    enabled: identityReady,
+    retry: 1,
     staleTime: Infinity,
   });
 
   const purchaseMutation = useMutation({
-    mutationFn: (packageToPurchase: PurchasesPackage) =>
-      Purchases.purchasePackage(packageToPurchase),
-    onSuccess: ({ customerInfo }) => {
-      queryClient.setQueryData(['revenuecat', 'customer-info'], customerInfo);
+    mutationFn: async (packageToPurchase: PurchasesPackage) => {
+      if (!identityReady) throw new Error('Membership account is not ready. Please try again.');
+      const requestUserId = userId;
+      const result = await Purchases.purchasePackage(packageToPurchase);
+      if (previousUserIdRef.current === requestUserId) {
+        queryClient.setQueryData(['revenuecat', 'customer-info', requestUserId], result.customerInfo);
+      }
+      return result;
     },
   });
 
   const restoreMutation = useMutation({
-    mutationFn: () => Purchases.restorePurchases(),
-    onSuccess: (customerInfo) => {
-      queryClient.setQueryData(['revenuecat', 'customer-info'], customerInfo);
+    mutationFn: async () => {
+      if (!identityReady) throw new Error('Membership account is not ready. Please try again.');
+      const requestUserId = userId;
+      const customerInfo = await Purchases.restorePurchases();
+      if (previousUserIdRef.current === requestUserId) {
+        queryClient.setQueryData(['revenuecat', 'customer-info', requestUserId], customerInfo);
+      }
+      return customerInfo;
     },
   });
 
-  const offerings: PurchasesOfferings | undefined = offeringsQuery.data;
+  const offerings: PurchasesOfferings | undefined = identityReady ? offeringsQuery.data : undefined;
   const offering: PurchasesOffering | null =
     offerings?.current ?? offerings?.all[REVENUECAT_OFFERING_IDENTIFIER] ?? null;
-  const customerInfo = customerInfoQuery.data;
+  const customerInfo = identityReady ? customerInfoQuery.data : undefined;
   const activeEntitlementIds = Object.keys(customerInfo?.entitlements.active ?? {});
 
   return {
     customerInfo,
     offerings,
     offering,
-    appUserId: appUserIdQuery.data,
+    appUserId: identityReady ? appUserIdQuery.data : undefined,
     activeEntitlementIds,
     access: getSubscriptionAccess(customerInfo),
     hasEntitlement: (identifier: string) =>
       activeEntitlementIds.some((activeIdentifier) => activeIdentifier.toLowerCase() === identifier.toLowerCase()),
-    isLoading: customerInfoQuery.isLoading || offeringsQuery.isLoading,
-    error: customerInfoQuery.error ?? offeringsQuery.error,
-    refreshOfferings: offeringsQuery.refetch,
+    isLoading: enabled && isLoaded && !!userId &&
+      identity.userId === userId && identity.status === 'syncing'
+      || (identityReady && (customerInfoQuery.isLoading || offeringsQuery.isLoading)),
+    error: identity.userId === userId ? identity.error ?? customerInfoQuery.error ?? offeringsQuery.error : null,
+    refreshOfferings: async () => {
+      if (identityReady) {
+        await offeringsQuery.refetch();
+      } else if (enabled && isLoaded && userId && identity.userId === userId && identity.status === 'error') {
+        setRetryIdentity((current) => current + 1);
+      }
+    },
     purchase: purchaseMutation.mutateAsync,
     restore: restoreMutation.mutateAsync,
     isPurchasing: purchaseMutation.isPending,

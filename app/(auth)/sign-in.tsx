@@ -9,12 +9,33 @@ export default function SignInScreen() {
   const { signIn, errors, fetchStatus } = useSignIn();
   const [emailAddress, setEmailAddress] = useState('');
   const [password, setPassword] = useState('');
-  const busy = fetchStatus === 'fetching';
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const busy = submitting || fetchStatus === 'fetching';
   async function submit() {
-    const { error } = await signIn.password({ emailAddress, password });
-    if (!error && signIn.status === 'complete') await signIn.finalize({ navigate: () => router.replace('/(tabs)') });
+    if (busy) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const { error } = await signIn.password({ emailAddress, password });
+      if (error) {
+        setSubmitError(error.message || 'Could not sign in. Please try again.');
+        return;
+      }
+      if (signIn.status === 'complete') {
+        const result = await signIn.finalize({ navigate: () => router.replace('/(tabs)') });
+        if (result?.error) setSubmitError(result.error.message || 'Sign-in could not finish. Please try again.');
+      } else {
+        setSubmitError('Sign-in could not finish. Please try again.');
+      }
+    } catch (error) {
+      console.error('Unable to complete sign-in', error);
+      setSubmitError('Could not sign in. Check your connection and try again.');
+    } finally {
+      setSubmitting(false);
+    }
   }
-  const errorText = errors.fields.identifier?.message ?? errors.fields.password?.message;
+  const errorText = submitError ?? errors.fields.identifier?.message ?? errors.fields.password?.message;
   return <View style={[styles.screen, { backgroundColor: colors.background }]}>
     <Text style={[styles.kicker, { color: colors.accent }]}>WELCOME BACK</Text>
     <Text style={[styles.title, { color: colors.foreground }]}>Return to your Nourish rhythm.</Text>

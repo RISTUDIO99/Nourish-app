@@ -12,6 +12,7 @@ type TrialContextValue = {
   isLoading: boolean;
   isActive: boolean;
   daysRemaining: number;
+  authReady: boolean;
 };
 
 const TrialContext = createContext<TrialContextValue | null>(null);
@@ -74,6 +75,7 @@ export function TrialProvider({ children }: { children: React.ReactNode }) {
     isLoading: Boolean(isSignedIn) && query.isLoading,
     isActive,
     daysRemaining,
+    authReady,
   };
   return <TrialContext.Provider value={value}>{children}</TrialContext.Provider>;
 }

@@ -10,6 +10,7 @@ export type AuthTokenGetter = () => Promise<string | null> | string | null;
 
 const NO_BODY_STATUS = new Set([204, 205, 304]);
 const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
+const GET_REQUEST_TIMEOUT_MS = 15_000;
 
 // ---------------------------------------------------------------------------
 // Module-level configuration
@@ -349,23 +350,55 @@ export async function customFetch<T = unknown>(
     headers.set("accept", DEFAULT_JSON_ACCEPT);
   }
 
-  // Attach bearer token when an auth getter is configured and no
-  // Authorization header has been explicitly provided.
-  if (_authTokenGetter && !headers.has("authorization")) {
-    const token = await _authTokenGetter();
-    if (token) {
-      headers.set("authorization", `Bearer ${token}`);
-    }
-  }
-
   const requestInfo = { method, url: resolveUrl(input) };
-
-  const response = await fetch(input, { ...init, method, headers });
-
-  if (!response.ok) {
-    const errorData = await parseErrorBody(response, method);
-    throw new ApiError(response, errorData, requestInfo);
+  const controller = method === "GET" ? new AbortController() : null;
+  let rejectCancellation: (reason?: unknown) => void = () => undefined;
+  const cancellation = new Promise<never>((_, reject) => {
+    rejectCancellation = reject;
+  });
+  const abortFromCaller = () => {
+    controller?.abort();
+    if (controller) rejectCancellation(new Error("Request was cancelled."));
+  };
+  if (controller && init.signal) {
+    if (init.signal.aborted) abortFromCaller();
+    else init.signal.addEventListener("abort", abortFromCaller, { once: true });
   }
 
-  return (await parseSuccessBody(response, responseType, requestInfo)) as T;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    if (controller) {
+      timer = setTimeout(() => {
+        reject(new Error("Request timed out. Check your connection and try again."));
+        controller.abort();
+      }, GET_REQUEST_TIMEOUT_MS);
+    }
+  });
+
+  const request = async (): Promise<T> => {
+    // The deadline also covers an auth-token getter that never resolves.
+    if (_authTokenGetter && !headers.has("authorization")) {
+      const token = await _authTokenGetter();
+      if (token) headers.set("authorization", `Bearer ${token}`);
+    }
+
+    const response = await fetch(input, {
+      ...init,
+      method,
+      headers,
+      signal: controller?.signal ?? init.signal,
+    });
+    if (!response.ok) {
+      const errorData = await parseErrorBody(response, method);
+      throw new ApiError(response, errorData, requestInfo);
+    }
+    return (await parseSuccessBody(response, responseType, requestInfo)) as T;
+  };
+
+  try {
+    return controller ? await Promise.race([request(), deadline, cancellation]) : await request();
+  } finally {
+    if (timer) clearTimeout(timer);
+    init.signal?.removeEventListener("abort", abortFromCaller);
+  }
 }

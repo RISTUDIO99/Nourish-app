@@ -153,6 +153,19 @@ export default function AccountScreen() {
     }
   }, [confirmPassword, currentPassword, newPassword, user]);
 
+  const openLegalUrl = useCallback(async (url: string, name: string) => {
+    setMessage('');
+    setMessageIsError(false);
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await Linking.openURL(url);
+    } catch (error) {
+      console.error(`Unable to open ${name}.`, error);
+      setMessageIsError(true);
+      setMessage(`We couldn’t open the ${name} page. Please try again.`);
+    }
+  }, []);
+
   const handleSignOut = useCallback(async () => {
     await signOut();
     router.replace('/(auth)/welcome');
@@ -499,6 +512,71 @@ export default function AccountScreen() {
             <Text style={[styles.signOutText, { color: colors.primary }]}>Sign out</Text>
           </Pressable>
         </View>
+
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Legal & Safety</Text>
+          <View style={styles.actions}>
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel="Privacy Policy"
+              onPress={() => void openLegalUrl('https://meal-plan-demo.replit.app/nourish-legal/privacy.html', 'Privacy Policy')}
+              style={({ pressed }) => [
+                styles.actionButton,
+                { backgroundColor: colors.card, borderColor: colors.border },
+                pressed && styles.pressed,
+              ]}
+            >
+              <View style={[styles.actionIcon, { backgroundColor: colors.secondary }]}>
+                <Feather name="shield" size={18} color={colors.primary} />
+              </View>
+              <View style={styles.actionCopy}>
+                <Text style={[styles.actionTitle, { color: colors.cardForeground }]}>Privacy Policy</Text>
+                <Text style={[styles.actionDescription, { color: colors.mutedForeground }]}>How we handle and protect your data.</Text>
+              </View>
+              <Feather name="external-link" size={18} color={colors.mutedForeground} />
+            </Pressable>
+
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel="Medical Disclaimer"
+              onPress={() => void openLegalUrl('https://meal-plan-demo.replit.app/nourish-legal/medical-disclaimer.html', 'Medical Disclaimer')}
+              style={({ pressed }) => [
+                styles.actionButton,
+                { backgroundColor: colors.card, borderColor: colors.border },
+                pressed && styles.pressed,
+              ]}
+            >
+              <View style={[styles.actionIcon, { backgroundColor: colors.secondary }]}>
+                <Feather name="info" size={18} color={colors.primary} />
+              </View>
+              <View style={styles.actionCopy}>
+                <Text style={[styles.actionTitle, { color: colors.cardForeground }]}>Medical Disclaimer</Text>
+                <Text style={[styles.actionDescription, { color: colors.mutedForeground }]}>Important educational and wellness information.</Text>
+              </View>
+              <Feather name="external-link" size={18} color={colors.mutedForeground} />
+            </Pressable>
+
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel="Account Deletion"
+              onPress={() => void openLegalUrl('https://meal-plan-demo.replit.app/nourish-legal/delete-account.html', 'Account Deletion')}
+              style={({ pressed }) => [
+                styles.actionButton,
+                { backgroundColor: colors.card, borderColor: colors.border },
+                pressed && styles.pressed,
+              ]}
+            >
+              <View style={[styles.actionIcon, { backgroundColor: `${colors.destructive}15` }]}>
+                <Feather name="trash-2" size={18} color={colors.destructive} />
+              </View>
+              <View style={styles.actionCopy}>
+                <Text style={[styles.actionTitle, { color: colors.cardForeground }]}>Account Deletion</Text>
+                <Text style={[styles.actionDescription, { color: colors.mutedForeground }]}>Request permanent account and data deletion.</Text>
+              </View>
+              <Feather name="external-link" size={18} color={colors.mutedForeground} />
+            </Pressable>
+          </View>
+        </View>
       </ScrollView>
     </View>
   );
@@ -540,6 +618,8 @@ const styles = StyleSheet.create({
   legacyButton: { minHeight: 54, borderRadius: 27, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9 },
   legacyButtonText: { fontSize: 13, fontWeight: '800', letterSpacing: 0.2 },
   errorText: { fontSize: 11.5, lineHeight: 17, textAlign: 'center' },
+  section: { gap: 14, marginTop: 10 },
+  sectionTitle: { fontSize: 18, fontWeight: '700', paddingHorizontal: 4 },
   actions: { gap: 12 },
   actionButton: { minHeight: 76, borderWidth: 1, borderRadius: 20, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 11 },
   actionIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },

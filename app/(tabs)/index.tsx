@@ -12,6 +12,7 @@ import { useSubscription } from '@/lib/revenuecat';
 import { trialCountdownCopy, useTrial } from '@/lib/trial';
 import { meals } from '@/constants/meals';
 import { canAccessMeal, FREE_PREVIEW_MEAL_ID } from '@/constants/access';
+import { useContentFeed } from '@/context/ContentFeedContext';
 
 const TRIAL_DRIP_MILESTONES = new Set([11, 7, 3, 1]);
 
@@ -30,6 +31,7 @@ export default function NourishDashboardScreen() {
   const { user } = useUser();
   const { access } = useSubscription();
   const { isActive: activeTrial, daysRemaining } = useTrial();
+  const { featuredMeals } = useContentFeed();
   const [showTrialDrip, setShowTrialDrip] = useState(false);
 
   const hasPremiumAccess = access.isPremium || activeTrial;
@@ -81,10 +83,20 @@ export default function NourishDashboardScreen() {
         isTrial: activeTrial,
       }),
   );
-  const featuredMeal =
+  const evergreenSuggestion =
     suggestedMeals[getLocalCalendarDay() % suggestedMeals.length] ??
     meals.find((meal) => meal.id === FREE_PREVIEW_MEAL_ID) ??
     meals[0];
+  const featuredMeal =
+    featuredMeals.find(
+      (meal) =>
+        meal.category === 'plan' &&
+        canAccessMeal(meal.id, {
+          isPremium: access.isPremium,
+          isFounderDiamond: access.isFounderDiamond,
+          isTrial: activeTrial,
+        }),
+    ) ?? evergreenSuggestion;
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>

@@ -4,7 +4,8 @@ import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
-import { categoryLabels, meals, type Meal, type MealCategory } from '@/constants/meals';
+import { categoryLabels, type Meal, type MealCategory } from '@/constants/meals';
+import { useContentFeed } from '@/context/ContentFeedContext';
 import { useSubscription } from '@/lib/revenuecat';
 import { useTrial } from '@/lib/trial';
 import { canAccessMeal, isFounderExclusiveMeal } from '@/constants/access';
@@ -99,6 +100,7 @@ export default function LibraryScreen() {
   const insets = useSafeAreaInsets();
   const { access } = useSubscription();
   const { isActive: activeTrial } = useTrial();
+  const { meals } = useContentFeed();
   const topInset = Platform.OS === 'web' ? Math.max(insets.top, 67) : insets.top;
 
   return (

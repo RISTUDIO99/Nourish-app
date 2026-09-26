@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
   Modal,
@@ -12,13 +12,14 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '@clerk/expo';
-import * as Haptics from 'expo-haptics';
+import { lightImpact, selectionFeedback, successFeedback } from '@/lib/feedback';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
-import { getMealById, meals, type MealIngredient } from '@/constants/meals';
+import type { MealIngredient } from '@/constants/meals';
 import { useSavedPlans } from '@/context/SavedPlansContext';
-import { canAccessMeal, isFounderExclusiveMeal } from '@/constants/access';
+import { useContentFeed } from '@/context/ContentFeedContext';
+import { canAccessMeal, canCustomizeMeal, isFounderExclusiveMeal, isRotatingCollectionMeal } from '@/constants/access';
 import { useSubscription } from '@/lib/revenuecat';
 import { useTrial } from '@/lib/trial';
 
@@ -32,26 +33,34 @@ export default function MealDetailScreen() {
   const topInset = Platform.OS === 'web' ? Math.max(insets.top, 67) : insets.top;
   const { id, savedId } = useLocalSearchParams<{ id: string; savedId?: string }>();
   const { isLoaded: authLoaded, isSignedIn } = useAuth();
-  const selectedMeal = getMealById(id);
+  const { meals } = useContentFeed();
+  const { plans, isLoaded, savePlan, updatePlan } = useSavedPlans();
+  const savedPlan = savedId ? plans.find((plan) => plan.id === savedId) : undefined;
+  const mealId = Array.isArray(id) ? id[0] : id;
+  const selectedMeal = savedId
+    ? savedPlan?.snapshot ?? meals.find((candidate) => candidate.id === mealId)
+    : meals.find((candidate) => candidate.id === mealId);
   const meal = selectedMeal ?? meals[0];
   const { access, isLoading: isSubscriptionLoading } = useSubscription();
   const { isActive: activeTrial, isLoading: isTrialLoading } = useTrial();
-  const hasPremiumAccess = access.isPremium || activeTrial;
+  const isRotatingMeal = isRotatingCollectionMeal(meal.id);
   const requiresFounder = isFounderExclusiveMeal(meal.id);
-  const canOpenMeal = canAccessMeal(meal.id, {
+  const mealAccess = {
     isPremium: access.isPremium,
     isFounderDiamond: access.isFounderDiamond,
     isTrial: activeTrial,
-  });
-  const canCustomize = canOpenMeal && hasPremiumAccess;
+  };
+  const canOpenMeal = canAccessMeal(meal.id, mealAccess);
+  const canCustomize = canCustomizeMeal(meal.id, mealAccess);
   const isContentLocked = !canOpenMeal;
-  const { plans, isLoaded, savePlan, updatePlan } = useSavedPlans();
-  const savedPlan = savedId ? plans.find((plan) => plan.id === savedId) : undefined;
-  const [ingredients, setIngredients] = useState<MealIngredient[]>(savedPlan?.ingredients ?? meal.ingredients);
+  const [ingredients, setIngredients] = useState<MealIngredient[]>([]);
   const [showPreparation, setShowPreparation] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [planName, setPlanName] = useState(savedPlan?.name ?? `${meal.title} · my way`);
+  const [planName, setPlanName] = useState('');
+  const initializedMealId = useRef<string | null>(null);
   const [savedPlanHydrated, setSavedPlanHydrated] = useState(!savedId);
   const [newIngredientName, setNewIngredientName] = useState('');
   const [newIngredientAmount, setNewIngredientAmount] = useState('1');
@@ -87,11 +96,18 @@ export default function MealDetailScreen() {
   }, [isLoaded, savedId, savedPlan, savedPlanHydrated]);
 
   useEffect(() => {
+    if (savedId || !selectedMeal || initializedMealId.current === selectedMeal.id) return;
+    initializedMealId.current = selectedMeal.id;
+    setIngredients(selectedMeal.ingredients);
+    setPlanName(`${selectedMeal.title} · my way`);
+  }, [savedId, selectedMeal]);
+
+  useEffect(() => {
     if (authLoaded && !isSignedIn) router.replace('/(auth)/welcome');
   }, [authLoaded, isSignedIn]);
 
   function adjustIngredient(ingredientId: string, change: number) {
-    Haptics.selectionAsync();
+    selectionFeedback();
     setIngredients((current) =>
       current.map((ingredient) => {
         if (ingredient.id !== ingredientId) return ingredient;
@@ -102,7 +118,7 @@ export default function MealDetailScreen() {
   }
 
   function removeIngredient(ingredientId: string) {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    lightImpact();
     setIngredients((current) => current.filter((ingredient) => ingredient.id !== ingredientId));
   }
 
@@ -124,10 +140,11 @@ export default function MealDetailScreen() {
     setNewIngredientAmount('1');
     setNewIngredientUnit('serving');
     setShowAddModal(false);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    successFeedback();
   }
 
   async function handleSave() {
+    if (!selectedMeal || !canCustomize || (savedId && !savedPlanHydrated) || isSaving) return;
     const trimmedName = planName.trim();
     if (!trimmedName) return;
     const plan = {
@@ -136,15 +153,25 @@ export default function MealDetailScreen() {
       mealTitle: meal.title,
       image: meal.image,
       ingredients,
+      snapshot: selectedMeal ?? meal,
     };
-    if (savedPlan) {
-      await updatePlan(savedPlan.id, plan);
-    } else {
-      await savePlan(plan);
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      if (savedPlan) {
+        await updatePlan(savedPlan.id, plan);
+      } else {
+        await savePlan(plan);
+      }
+      setShowSaveModal(false);
+      successFeedback();
+      router.push('/(tabs)/saved' as never);
+    } catch (error) {
+      console.error('Failed to save meal plan', error);
+      setSaveError('Could not save this plan on your device. Please try again.');
+    } finally {
+      setIsSaving(false);
     }
-    setShowSaveModal(false);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    router.push('/(tabs)/saved' as never);
   }
 
   if (!authLoaded || !isSignedIn) {
@@ -211,7 +238,7 @@ export default function MealDetailScreen() {
     );
   }
 
-  if (!selectedMeal || (savedId && isLoaded && !savedPlan)) {
+  if ((!selectedMeal && !savedPlan?.snapshot) || (savedId && isLoaded && !savedPlan)) {
     return (
       <View style={[styles.notFound, { backgroundColor: colors.background }]}>
         <Feather name="search" size={34} color={colors.primary} />
@@ -292,7 +319,7 @@ export default function MealDetailScreen() {
                 <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Make it yours.</Text>
               </View>
               <Text style={[styles.ingredientHint, { color: colors.mutedForeground }]}>
-                {canCustomize ? 'Tap − / + to adjust' : 'Premium members can customize'}
+                {canCustomize ? 'Tap − / + to adjust' : isRotatingMeal ? 'Founder Diamond can customize' : 'Premium members can customize'}
               </Text>
             </View>
 
@@ -361,16 +388,18 @@ export default function MealDetailScreen() {
             </Pressable> : (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Unlock Premium recipe customization"
+                accessibilityLabel={isRotatingMeal ? 'Unlock Founder Diamond recipe customization' : 'Unlock Premium recipe customization'}
                 testID="unlock-premium-customization"
                 onPress={() => router.push('/paywall')}
                 style={[styles.proUpsell, { backgroundColor: colors.secondary, borderColor: colors.border }]}
               >
                 <Feather name="sliders" size={18} color={colors.primary} />
                 <View style={styles.proUpsellCopy}>
-                  <Text style={[styles.proUpsellTitle, { color: colors.foreground }]}>Make it yours with Premium</Text>
+                  <Text style={[styles.proUpsellTitle, { color: colors.foreground }]}>
+                    {isRotatingMeal ? 'Make this monthly meal yours with Founder Diamond' : 'Make it yours with Premium'}
+                  </Text>
                   <Text style={[styles.proUpsellText, { color: colors.mutedForeground }]}>
-                    Adjust amounts, swap ingredients, and save a named version.
+                    {isRotatingMeal ? 'Edit or add ingredients and save a named version. Premium members can still view the recipe.' : 'Adjust amounts, swap ingredients, and save a named version.'}
                   </Text>
                 </View>
                 <Feather name="arrow-right" size={17} color={colors.primary} />
@@ -519,7 +548,7 @@ export default function MealDetailScreen() {
                 ? savedPlan
                   ? 'Update saved plan'
                   : 'Save my version of this plan'
-                : 'Unlock Premium to save a named plan'
+                : isRotatingMeal ? 'Unlock Founder Diamond to save a monthly meal' : 'Unlock Premium to save a named plan'
             }
             accessibilityState={{ disabled: canCustomize && !isLoaded }}
             testID="save-plan"
@@ -535,7 +564,7 @@ export default function MealDetailScreen() {
             <Feather name="bookmark" size={18} color={colors.accentForeground} />
             <Text style={[styles.saveButtonText, { color: colors.accentForeground }]}>
               {!canCustomize
-                ? 'Unlock Premium to save this plan'
+                 ? isRotatingMeal ? 'Unlock Founder Diamond to save this plan' : 'Unlock Premium to save this plan'
                 : isLoaded
                   ? savedPlan
                     ? 'Update saved plan'
@@ -546,7 +575,9 @@ export default function MealDetailScreen() {
           <Text style={[styles.saveHint, { color: colors.mutedForeground }]}>
             {canCustomize
               ? 'Your ingredients and quantities stay on this device.'
-              : 'Named saved plans are included with Premium and Founder Diamond access.'}
+               : isRotatingMeal
+                 ? 'Monthly and annual Premium members can view this meal. Founder Diamond unlocks editing and saving.'
+                 : 'Named saved plans are included with Premium and Founder Diamond access.'}
           </Text>
         </View>
       </ScrollView>
@@ -579,6 +610,7 @@ export default function MealDetailScreen() {
                 ? 'Rename this version if you like. Your ingredient changes will replace the saved plan.'
                 : 'Give your adjusted recipe a name so it&apos;s easy to find in Saved.'}
             </Text>
+            {saveError ? <Text accessibilityRole="alert" style={{ color: colors.destructive, marginBottom: 12 }}>{saveError}</Text> : null}
             <TextInput
               accessibilityLabel="Plan name"
               testID="plan-name-input"
@@ -598,11 +630,12 @@ export default function MealDetailScreen() {
               <Pressable
                 accessibilityRole="button"
                 testID="confirm-save-plan"
+                disabled={isSaving}
                 onPress={handleSave}
                 style={[styles.modalSaveButton, { backgroundColor: colors.primary }]}
               >
                 <Text style={[styles.modalSaveButtonText, { color: colors.primaryForeground }]}>
-                  {savedPlan ? 'Update plan' : 'Save plan'}
+                  {isSaving ? 'Saving…' : savedPlan ? 'Update plan' : 'Save plan'}
                 </Text>
               </Pressable>
             </View>

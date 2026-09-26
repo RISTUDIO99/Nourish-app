@@ -1,10 +1,10 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { ImageBackground, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Haptics from 'expo-haptics';
+import { lightImpact, successFeedback } from '@/lib/feedback';
 import { useUser } from '@clerk/expo';
 import { useColors } from '@/hooks/useColors';
 
@@ -83,8 +83,8 @@ function getLocalMondayKey() {
   return `${year}-${month}-${day}`;
 }
 
-async function giveFeedback() {
-  await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+function giveFeedback() {
+  lightImpact();
 }
 
 export default function JourneyScreen() {
@@ -97,19 +97,28 @@ export default function JourneyScreen() {
   const [journeyState, setJourneyState] = useState<JourneyState>({});
   const [expandedDay, setExpandedDay] = useState<number>(1);
   const [loaded, setLoaded] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const stateRef = useRef<JourneyState>({});
+  const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
+    let active = true;
     setLoaded(false);
+    setSaveError(null);
     setJourneyState({});
+    stateRef.current = {};
+    writeQueueRef.current = Promise.resolve();
     if (!storageKey) {
       if (userLoaded) setLoaded(true);
-      return;
+      return () => { active = false; };
     }
 
     void AsyncStorage.getItem(storageKey)
       .then((data) => {
+        if (!active) return;
         if (data) {
-          const parsed = JSON.parse(data);
+          const parsed = JSON.parse(data) as JourneyState;
+          stateRef.current = parsed;
           setJourneyState(parsed);
 
           const firstIncomplete = JOURNEY_DAYS.find(d => !parsed[d.day]?.completed);
@@ -124,34 +133,45 @@ export default function JourneyScreen() {
         console.error('Failed to load wellness journey', error);
       })
       .finally(() => {
-        setLoaded(true);
+        if (active) setLoaded(true);
       });
+    return () => { active = false; };
   }, [storageKey, userLoaded]);
 
   const saveState = useCallback(async (newState: JourneyState) => {
     if (!storageKey) return;
+    stateRef.current = newState;
     setJourneyState(newState);
-    await AsyncStorage.setItem(storageKey, JSON.stringify(newState));
+    setSaveError(null);
+    try {
+      writeQueueRef.current = writeQueueRef.current
+        .catch(() => undefined)
+        .then(() => AsyncStorage.setItem(storageKey, JSON.stringify(newState)));
+      await writeQueueRef.current;
+    } catch (error) {
+      console.error('Failed to save wellness journey', error);
+      setSaveError('Could not save your journey on this device. Please try again.');
+    }
   }, [storageKey]);
 
-  const toggleDay = useCallback(async (day: number) => {
-    await giveFeedback();
+  const toggleDay = useCallback((day: number) => {
     setExpandedDay(prev => prev === day ? 0 : day);
+    giveFeedback();
   }, []);
 
   const setEnergy = useCallback(async (day: number, energy: EnergyLevel) => {
-    await giveFeedback();
-    const current = journeyState[day] || { completed: false };
-    const newState = { ...journeyState, [day]: { ...current, energy } };
+    const current = stateRef.current[day] || { completed: false };
+    const newState = { ...stateRef.current, [day]: { ...current, energy } };
     await saveState(newState);
-  }, [journeyState, saveState]);
+    giveFeedback();
+  }, [saveState]);
 
   const toggleComplete = useCallback(async (day: number) => {
-    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const current = journeyState[day] || {};
+    const current = stateRef.current[day] || {};
     const isNowComplete = !current.completed;
-    const newState = { ...journeyState, [day]: { ...current, completed: isNowComplete } };
+    const newState = { ...stateRef.current, [day]: { ...current, completed: isNowComplete } };
     await saveState(newState);
+    successFeedback();
 
     if (isNowComplete && expandedDay === day) {
       if (day < 7) {
@@ -160,7 +180,7 @@ export default function JourneyScreen() {
         }, 600);
       }
     }
-  }, [journeyState, saveState, expandedDay]);
+  }, [saveState, expandedDay]);
 
   if (!loaded) {
     return (
@@ -220,6 +240,7 @@ export default function JourneyScreen() {
 
         <View style={[styles.journeyBody, { backgroundColor: colors.card }]}>
           <View style={styles.pathIntro}>
+            {saveError ? <Text accessibilityRole="alert" style={{ color: colors.destructive, marginBottom: 12 }}>{saveError}</Text> : null}
             <View style={styles.pathTitleRow}>
               <Text style={[styles.pathTitle, { color: colors.foreground }]}>Wellness Journey</Text>
               <View style={[styles.progressBadge, { borderColor: colors.border }]}>

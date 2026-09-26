@@ -14,6 +14,7 @@ import {
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { SavedPlansProvider } from '@/context/SavedPlansContext';
+import { ContentFeedProvider } from '@/context/ContentFeedContext';
 import { initializeRevenueCat, SubscriptionProvider } from '@/lib/revenuecat';
 import { TrialProvider } from '@/lib/trial';
 import { ClerkLoaded, ClerkProvider } from '@clerk/expo';
@@ -82,9 +83,11 @@ export default function RootLayout() {
             <GestureHandlerRootView>
               <KeyboardProvider>
                 <TrialProvider>
-                  <SavedPlansProvider>
-                    <RootLayoutNav />
-                  </SavedPlansProvider>
+                  <ContentFeedProvider>
+                    <SavedPlansProvider>
+                      <RootLayoutNav />
+                    </SavedPlansProvider>
+                  </ContentFeedProvider>
                 </TrialProvider>
               </KeyboardProvider>
             </GestureHandlerRootView>

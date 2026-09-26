@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import type { MealIngredient } from '@/constants/meals';
+import type { Meal, MealIngredient } from '@/constants/meals';
+import { useContentFeed } from '@/context/ContentFeedContext';
 
 const STORAGE_KEY = '@nourish/saved-plans';
 
@@ -25,7 +26,68 @@ export type SavedPlan = {
   image: string;
   savedAt: string;
   ingredients: MealIngredient[];
+  snapshot?: Meal;
 };
+
+function isMealIngredient(value: unknown): value is MealIngredient {
+  if (!value || typeof value !== 'object') return false;
+  const ingredient = value as Record<string, unknown>;
+  return (
+    typeof ingredient.id === 'string' &&
+    typeof ingredient.name === 'string' &&
+    typeof ingredient.amount === 'number' &&
+    Number.isFinite(ingredient.amount) &&
+    typeof ingredient.unit === 'string' &&
+    typeof ingredient.calories === 'number' &&
+    typeof ingredient.protein === 'number' &&
+    typeof ingredient.fiber === 'number'
+  );
+}
+
+function isMealSnapshot(value: unknown): value is Meal {
+  if (!value || typeof value !== 'object') return false;
+  const meal = value as Record<string, unknown>;
+  const nutrition = meal.nutrition;
+  return (
+    typeof meal.id === 'string' &&
+    (meal.category === 'plan' || meal.category === 'smoothie' || meal.category === 'drink') &&
+    typeof meal.title === 'string' &&
+    typeof meal.description === 'string' &&
+    typeof meal.image === 'string' &&
+    typeof meal.prepTime === 'string' &&
+    typeof meal.servings === 'number' &&
+    Number.isInteger(meal.servings) &&
+    meal.servings >= 1 &&
+    !!nutrition &&
+    typeof nutrition === 'object' &&
+    ['calories', 'protein', 'fiber', 'carbs'].every((key) => {
+      const amount = (nutrition as Record<string, unknown>)[key];
+      return typeof amount === 'number' && Number.isFinite(amount) && amount >= 0;
+    }) &&
+    Array.isArray(meal.ingredients) &&
+    meal.ingredients.length > 0 &&
+    meal.ingredients.every(isMealIngredient) &&
+    Array.isArray(meal.instructions) &&
+    meal.instructions.length > 0 &&
+    meal.instructions.every((instruction) => typeof instruction === 'string' && instruction.trim().length > 0)
+  );
+}
+
+function isSavedPlan(value: unknown): value is SavedPlan {
+  if (!value || typeof value !== 'object') return false;
+  const plan = value as Record<string, unknown>;
+  return (
+    typeof plan.id === 'string' &&
+    typeof plan.name === 'string' &&
+    typeof plan.mealId === 'string' &&
+    typeof plan.mealTitle === 'string' &&
+    typeof plan.image === 'string' &&
+    typeof plan.savedAt === 'string' &&
+    Array.isArray(plan.ingredients) &&
+    plan.ingredients.every(isMealIngredient) &&
+    (plan.snapshot === undefined || isMealSnapshot(plan.snapshot))
+  );
+}
 
 type SavedPlansContextValue = {
   plans: SavedPlan[];
@@ -38,6 +100,7 @@ type SavedPlansContextValue = {
 const SavedPlansContext = createContext<SavedPlansContextValue | null>(null);
 
 export function SavedPlansProvider({ children }: { children: React.ReactNode }) {
+  const { meals } = useContentFeed();
   const [plans, setPlans] = useState<SavedPlan[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const plansRef = useRef<SavedPlan[]>([]);
@@ -47,7 +110,8 @@ export function SavedPlansProvider({ children }: { children: React.ReactNode }) 
     AsyncStorage.getItem(STORAGE_KEY)
       .then((stored) => {
         if (stored) {
-          const storedPlans = JSON.parse(stored) as SavedPlan[];
+          const parsed: unknown = JSON.parse(stored);
+          const storedPlans = Array.isArray(parsed) ? parsed.filter(isSavedPlan) : [];
           plansRef.current = storedPlans;
           setPlans(storedPlans);
         }
@@ -57,13 +121,35 @@ export function SavedPlansProvider({ children }: { children: React.ReactNode }) 
   }, []);
 
   const persist = useCallback(async (nextPlans: SavedPlan[]) => {
+    const previousPlans = plansRef.current;
     plansRef.current = nextPlans;
     setPlans(nextPlans);
     writeQueueRef.current = writeQueueRef.current
       .catch(() => undefined)
       .then(() => AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextPlans)));
-    await writeQueueRef.current;
+    try {
+      await writeQueueRef.current;
+    } catch (error) {
+      if (plansRef.current === nextPlans) {
+        plansRef.current = previousPlans;
+        setPlans(previousPlans);
+      }
+      throw error;
+    }
   }, []);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    const mealById = new Map(meals.map((meal) => [meal.id, meal]));
+    const migratedPlans = plansRef.current.map((plan) => {
+      if (plan.snapshot) return plan;
+      const originalMeal = mealById.get(plan.mealId);
+      return originalMeal ? { ...plan, snapshot: originalMeal } : plan;
+    });
+    if (migratedPlans.some((plan, index) => plan !== plansRef.current[index])) {
+      void persist(migratedPlans).catch((error) => console.warn('Unable to migrate saved Nourish plan details.', error));
+    }
+  }, [isLoaded, meals, persist]);
 
   const savePlan = useCallback(
     async (plan: Omit<SavedPlan, 'id' | 'savedAt'>) => {

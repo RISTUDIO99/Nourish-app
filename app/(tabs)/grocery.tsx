@@ -3,11 +3,11 @@ import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextIn
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Haptics from 'expo-haptics';
+import { lightImpact, successFeedback } from '@/lib/feedback';
 import { useUser } from '@clerk/expo';
 import { useColors } from '@/hooks/useColors';
-import { meals } from '@/constants/meals';
 import { canAccessMeal } from '@/constants/access';
+import { useContentFeed } from '@/context/ContentFeedContext';
 import { useSubscription } from '@/lib/revenuecat';
 import { useTrial } from '@/lib/trial';
 
@@ -46,6 +46,7 @@ export default function GroceryScreen() {
   const { isLoaded: userLoaded, user } = useUser();
   const { access } = useSubscription();
   const { isActive: activeTrial } = useTrial();
+  const { meals } = useContentFeed();
   const topInset = Platform.OS === 'web' ? Math.max(insets.top, 67) : insets.top;
   const storageKey = user?.id ? `${STORAGE_KEY}:${user.id}` : null;
   const customStorageKey = user?.id ? `${CUSTOM_STORAGE_KEY}:${user.id}` : null;
@@ -56,6 +57,7 @@ export default function GroceryScreen() {
   const [editingItem, setEditingItem] = useState<CustomGroceryItem | null>(null);
   const [editingName, setEditingName] = useState('');
   const [loaded, setLoaded] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const checkedIdsRef = useRef<Set<string>>(new Set());
   const customItemsRef = useRef<CustomGroceryItem[]>([]);
   const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -90,10 +92,11 @@ export default function GroceryScreen() {
     result.sort((a, b) => order.indexOf(a.title) - order.indexOf(b.title));
 
     return result;
-  }, [access.isFounderDiamond, access.isPremium, activeTrial]);
+  }, [meals, access.isFounderDiamond, access.isPremium, activeTrial]);
 
   useEffect(() => {
     setLoaded(false);
+    setSaveError(null);
     setCheckedIds(new Set());
     setCustomItems([]);
     checkedIdsRef.current = new Set();
@@ -136,11 +139,13 @@ export default function GroceryScreen() {
   }, [customStorageKey, storageKey, userLoaded]);
 
   const queueStorageWrite = useCallback((key: string, value: string) => {
+    setSaveError(null);
     writeQueueRef.current = writeQueueRef.current
       .catch(() => undefined)
       .then(() => AsyncStorage.setItem(key, value))
       .catch((error) => {
         console.error('Failed to save grocery guide', error);
+        setSaveError('Could not save your grocery changes on this device. Please try again.');
       });
     return writeQueueRef.current;
   }, []);
@@ -160,7 +165,6 @@ export default function GroceryScreen() {
   }, [customStorageKey, queueStorageWrite]);
 
   const toggleItem = useCallback(async (id: string) => {
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const newSet = new Set(checkedIdsRef.current);
     if (newSet.has(id)) {
       newSet.delete(id);
@@ -168,6 +172,7 @@ export default function GroceryScreen() {
       newSet.add(id);
     }
     await saveChecked(newSet);
+    lightImpact();
   }, [saveChecked]);
 
   const addCustomItem = useCallback(async () => {
@@ -179,8 +184,8 @@ export default function GroceryScreen() {
       createdAt: Date.now(),
     };
     setNewItemName('');
-    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     await saveCustomItems([...customItemsRef.current, item]);
+    successFeedback();
   }, [newItemName, saveCustomItems]);
 
   const beginEditing = useCallback((item: CustomGroceryItem) => {
@@ -229,8 +234,8 @@ export default function GroceryScreen() {
 
   const resetList = useCallback(() => {
     const doReset = async () => {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       await saveChecked(new Set());
+      successFeedback();
     };
 
     if (Platform.OS === 'web') {
@@ -281,6 +286,7 @@ export default function GroceryScreen() {
             <Feather name="shopping-bag" size={24} color={colors.primary} />
           </View>
         </View>
+        {saveError ? <Text accessibilityRole="alert" style={{ color: colors.destructive, marginBottom: 12 }}>{saveError}</Text> : null}
 
         <View style={[styles.addCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.addCopy}>

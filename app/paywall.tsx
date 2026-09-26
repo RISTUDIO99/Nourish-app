@@ -37,7 +37,7 @@ const TIERS: TierDefinition[] = [
     subtitle: '$6.99/month',
     billingPeriod: '/month',
     icon: 'sliders',
-    features: ['6 complete meal plans', '3 smoothies and 2 healthy drinks', 'Wellness, grocery, customization, and saved plans'],
+    features: ['6 complete meal plans', '3 smoothies and 2 healthy drinks', 'Wellness, grocery, and saved versions of everyday meals', 'View monthly featured meals; Founder Diamond saves and edits them'],
   },
   {
     id: 'premium-annual',
@@ -45,7 +45,7 @@ const TIERS: TierDefinition[] = [
     subtitle: '$49.99/year',
     billingPeriod: '/year',
     icon: 'star',
-    features: ['Everything in Premium Monthly', 'Best Value', 'The same 6-plan Premium access'],
+    features: ['Everything in Premium Monthly', 'Best Value', 'View monthly featured meals; Founder Diamond saves and edits them'],
   },
   {
     id: 'founder-diamond',
@@ -55,6 +55,7 @@ const TIERS: TierDefinition[] = [
     icon: 'award',
     features: [
       'Everything in Premium, plus the complete Founder collection',
+      'Edit ingredients and save monthly featured meals',
       'Private Legacy nutrition and wellness website access',
       'A new Founder nutrition program every month',
       'Founder-only releases, early access, and recognition',

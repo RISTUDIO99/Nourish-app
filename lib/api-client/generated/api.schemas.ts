@@ -5,6 +5,93 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export interface ContentIngredient {
+  /** @minLength 1 */
+  id: string;
+  /** @minLength 1 */
+  name: string;
+  /** @minimum 0 */
+  amount: number;
+  /** @minLength 1 */
+  unit: string;
+  /** @minimum 0 */
+  calories: number;
+  /** @minimum 0 */
+  protein: number;
+  /** @minimum 0 */
+  fiber: number;
+}
+
+export interface ContentNutrition {
+  /** @minimum 0 */
+  calories: number;
+  /** @minimum 0 */
+  protein: number;
+  /** @minimum 0 */
+  fiber: number;
+  /** @minimum 0 */
+  carbs: number;
+}
+
+export type ContentMealCategory = typeof ContentMealCategory[keyof typeof ContentMealCategory];
+
+
+export const ContentMealCategory = {
+  plan: 'plan',
+  smoothie: 'smoothie',
+  drink: 'drink',
+} as const;
+
+export interface ContentMeal {
+  /** @minLength 1 */
+  id: string;
+  category: ContentMealCategory;
+  /** @minLength 1 */
+  title: string;
+  /** @minLength 1 */
+  description: string;
+  image: string;
+  /** @minLength 1 */
+  prepTime: string;
+  /** @minimum 1 */
+  servings: number;
+  nutrition: ContentNutrition;
+  /** @minItems 1 */
+  ingredients: ContentIngredient[];
+  /** @minItems 1 */
+  instructions: string[];
+}
+
+export interface ContentCollectionInput {
+  /** @minLength 1 */
+  title: string;
+  /** @minLength 1 */
+  description: string;
+  startsAt: string;
+  endsAt: string;
+  /** @minItems 1 */
+  meals: ContentMeal[];
+}
+
+export type ContentCollectionStatus = typeof ContentCollectionStatus[keyof typeof ContentCollectionStatus];
+
+
+export const ContentCollectionStatus = {
+  draft: 'draft',
+  approved: 'approved',
+} as const;
+
+export type ContentCollection = ContentCollectionInput & {
+  id: string;
+  status: ContentCollectionStatus;
+};
+
+export interface ContentFeed {
+  serverNow: string;
+  featured: ContentCollection | null;
+  archive: ContentCollection[];
+}
+
 export interface HealthStatus {
   status: string;
 }
