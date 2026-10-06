@@ -9,6 +9,10 @@ import Purchases, {
   type PurchasesOfferings,
   type PurchasesPackage,
 } from 'react-native-purchases';
+import { getSubscriptionAccess } from './subscription-access';
+import { purchaseMembership } from './membership-purchase';
+export { getSubscriptionAccess } from './subscription-access';
+export type { SubscriptionAccess } from './subscription-access';
 
 const TEST_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_TEST_API_KEY;
 const IOS_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY;
@@ -60,43 +64,6 @@ export function initializeRevenueCat() {
   isConfigured = true;
 }
 
-export type SubscriptionAccess = {
-  isPremium: boolean;
-  isFounderDiamond: boolean;
-  hasLegacyRoomAccess: boolean;
-};
-
-/**
- * Maps active RevenueCat entitlement identifiers to the approved access model.
- * Old identifiers intentionally remain here only as migration compatibility for
- * existing customers and restored purchases.
- */
-export function getSubscriptionAccess(customerInfo?: CustomerInfo): SubscriptionAccess {
-  const active = new Set(
-    Object.keys(customerInfo?.entitlements.active ?? {}).map((identifier) => identifier.toLowerCase()),
-  );
-  const isHistoricalFounder =
-    active.has('founder') ||
-    active.has('founder_diamond') ||
-    active.has('lifetime') ||
-    active.has('legacy') ||
-    active.has('legacy_room_access');
-  const isFounderDiamond = isHistoricalFounder;
-  const isPremium =
-    isFounderDiamond ||
-    active.has('premium') ||
-    active.has('essentials') ||
-    active.has('pro');
-
-  return {
-    isPremium,
-    isFounderDiamond,
-    // Legacy Room is derived from Founder Diamond. legacy_room_access above
-    // promotes historical members to Founder Diamond rather than standing alone.
-    hasLegacyRoomAccess: isFounderDiamond,
-  };
-}
-
 function useSubscriptionContext(enabled: boolean) {
   const { isLoaded, user } = useUser();
   const queryClient = useQueryClient();
@@ -108,6 +75,7 @@ function useSubscriptionContext(enabled: boolean) {
     error: Error | null;
   }>({ userId: null, status: 'syncing', error: null });
   const [retryIdentity, setRetryIdentity] = useState(0);
+  const billingActionRef = useRef(false);
   useEffect(() => {
     if (!enabled || !isLoaded) return;
     let active = true;
@@ -178,24 +146,43 @@ function useSubscriptionContext(enabled: boolean) {
   const purchaseMutation = useMutation({
     mutationFn: async (packageToPurchase: PurchasesPackage) => {
       if (!identityReady) throw new Error('Membership account is not ready. Please try again.');
+      if (billingActionRef.current) throw new Error('A store request is already in progress.');
       const requestUserId = userId;
-      const result = await Purchases.purchasePackage(packageToPurchase);
-      if (previousUserIdRef.current === requestUserId) {
+      billingActionRef.current = true;
+      try {
+        const result = await purchaseMembership({
+          getFreshInfo: () => withMembershipDeadline((async () => {
+            await Purchases.invalidateCustomerInfoCache();
+            return Purchases.getCustomerInfo();
+          })()),
+          buy: (item, change) => Purchases.purchasePackage(item, null, change),
+        }, packageToPurchase,
+        Platform.OS === 'android' && !__DEV__ && Constants.executionEnvironment !== 'storeClient',
+        () => previousUserIdRef.current === requestUserId);
         queryClient.setQueryData(['revenuecat', 'customer-info', requestUserId], result.customerInfo);
+        return result;
+      } finally {
+        billingActionRef.current = false;
       }
-      return result;
     },
   });
 
   const restoreMutation = useMutation({
     mutationFn: async () => {
       if (!identityReady) throw new Error('Membership account is not ready. Please try again.');
+      if (billingActionRef.current) throw new Error('A store request is already in progress.');
       const requestUserId = userId;
-      const customerInfo = await Purchases.restorePurchases();
-      if (previousUserIdRef.current === requestUserId) {
+      billingActionRef.current = true;
+      try {
+        const customerInfo = await Purchases.restorePurchases();
+        if (previousUserIdRef.current !== requestUserId) {
+          throw new Error('Your membership account changed. Sign in again before restoring.');
+        }
         queryClient.setQueryData(['revenuecat', 'customer-info', requestUserId], customerInfo);
+        return customerInfo;
+      } finally {
+        billingActionRef.current = false;
       }
-      return customerInfo;
     },
   });
 

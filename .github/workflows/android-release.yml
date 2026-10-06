@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - release/android-1.4.0-v6
+      - release/android-1.4.3-v8
 
 permissions:
   contents: read
@@ -46,6 +46,17 @@ jobs:
               exit 1
             fi
           done
+
+      - name: Verify the approved RevenueCat Android app record
+        run: |
+          node <<'NODE'
+          const crypto = require('node:crypto');
+          const hash = crypto.createHash('sha256').update(process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY || '').digest('hex');
+          if (hash !== 'b97d66ee60be30a15dc87125ab32ed25f98fc67b535e117401a853b0658b296a') {
+            console.error('Android RevenueCat key does not match the verified Nourish Android app record. No key values were displayed.');
+            process.exit(1);
+          }
+          NODE
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -244,7 +255,7 @@ jobs:
         shell: bash
         run: |
           SOURCE="android/app/build/outputs/bundle/release/app-release.aab"
-          OUTPUT="Nourish-1.4.0-version-code-6.aab"
+          OUTPUT="Nourish-1.4.3-version-code-8.aab"
           EXPECTED="A2:99:A9:54:2E:55:80:E0:C3:86:69:E4:34:20:F6:E7:43:F7:14:DA"
 
           test -s "$SOURCE"
@@ -259,7 +270,7 @@ jobs:
       - name: Upload the verified App Bundle
         uses: actions/upload-artifact@v4
         with:
-          name: Nourish-1.4.0-version-code-6
-          path: Nourish-1.4.0-version-code-6.aab
+          name: Nourish-1.4.3-version-code-8
+          path: Nourish-1.4.3-version-code-8.aab
           if-no-files-found: error
           retention-days: 14

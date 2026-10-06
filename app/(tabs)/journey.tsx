@@ -7,9 +7,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { lightImpact, successFeedback } from '@/lib/feedback';
 import { useUser } from '@clerk/expo';
 import { useColors } from '@/hooks/useColors';
+import { createJourneyStorage, type EnergyLevel, type JourneyState } from '@/lib/journey-storage';
 
-type EnergyLevel = 'low' | 'steady' | 'bright';
-type JourneyState = Record<number, { completed: boolean; energy?: EnergyLevel }>;
+const journeyStorage = createJourneyStorage(AsyncStorage);
 
 const JOURNEY_DAYS = [
   { day: 1, title: 'Finding your baseline', prompt: 'Notice how you feel today without judgment. What does your body need most right now?' },
@@ -97,62 +97,72 @@ export default function JourneyScreen() {
   const [journeyState, setJourneyState] = useState<JourneyState>({});
   const [expandedDay, setExpandedDay] = useState<number>(1);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const stateRef = useRef<JourneyState>({});
-  const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const [savedDay, setSavedDay] = useState<number | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const savingRef = useRef(false);
+  const scopeRef = useRef(0);
 
   useEffect(() => {
     let active = true;
+    scopeRef.current += 1;
     setLoaded(false);
+    setLoadError(false);
     setSaveError(null);
+    setSavedDay(null);
+    setIsSaving(false);
+    savingRef.current = false;
     setJourneyState({});
-    stateRef.current = {};
-    writeQueueRef.current = Promise.resolve();
+    setExpandedDay(1);
     if (!storageKey) {
       if (userLoaded) setLoaded(true);
       return () => { active = false; };
     }
 
-    void AsyncStorage.getItem(storageKey)
-      .then((data) => {
+    void journeyStorage.read(storageKey)
+      .then((parsed) => {
         if (!active) return;
-        if (data) {
-          const parsed = JSON.parse(data) as JourneyState;
-          stateRef.current = parsed;
-          setJourneyState(parsed);
-
-          const firstIncomplete = JOURNEY_DAYS.find(d => !parsed[d.day]?.completed);
-          if (firstIncomplete) {
-            setExpandedDay(firstIncomplete.day);
-          } else {
-            setExpandedDay(7);
-          }
-        }
+        setJourneyState(parsed);
+        const firstIncomplete = JOURNEY_DAYS.find(d => !parsed[d.day]?.completed);
+        setExpandedDay(firstIncomplete?.day ?? 7);
+        setLoaded(true);
       })
       .catch((error) => {
         console.error('Failed to load wellness journey', error);
-      })
-      .finally(() => {
-        if (active) setLoaded(true);
+        // Do not allow an empty fallback to overwrite a saved journal we could not read.
+        if (active) setLoadError(true);
       });
-    return () => { active = false; };
-  }, [storageKey, userLoaded]);
+    return () => { active = false; scopeRef.current += 1; };
+  }, [storageKey, userLoaded, loadAttempt]);
 
-  const saveState = useCallback(async (newState: JourneyState) => {
-    if (!storageKey) return;
-    stateRef.current = newState;
-    setJourneyState(newState);
+  const saveDay = useCallback(async (day: number, patch: Partial<JourneyState[number]>) => {
+    if (!storageKey || !loaded || savingRef.current) return false;
+    const scope = scopeRef.current;
+    savingRef.current = true;
+    setIsSaving(true);
     setSaveError(null);
+    setSavedDay(null);
     try {
-      writeQueueRef.current = writeQueueRef.current
-        .catch(() => undefined)
-        .then(() => AsyncStorage.setItem(storageKey, JSON.stringify(newState)));
-      await writeQueueRef.current;
+      const committed = await journeyStorage.update(storageKey, day, patch);
+      if (scopeRef.current !== scope) return false;
+      setJourneyState(committed);
+      setSavedDay(day);
+      return true;
     } catch (error) {
       console.error('Failed to save wellness journey', error);
-      setSaveError('Could not save your journey on this device. Please try again.');
+      if (scopeRef.current === scope) {
+        setSaveError('This check-in was not saved. Your previous entries are unchanged. Please try again.');
+      }
+      return false;
+    } finally {
+      if (scopeRef.current === scope) {
+        savingRef.current = false;
+        setIsSaving(false);
+      }
     }
-  }, [storageKey]);
+  }, [storageKey, loaded]);
 
   const toggleDay = useCallback((day: number) => {
     setExpandedDay(prev => prev === day ? 0 : day);
@@ -160,32 +170,28 @@ export default function JourneyScreen() {
   }, []);
 
   const setEnergy = useCallback(async (day: number, energy: EnergyLevel) => {
-    const current = stateRef.current[day] || { completed: false };
-    const newState = { ...stateRef.current, [day]: { ...current, energy } };
-    await saveState(newState);
-    giveFeedback();
-  }, [saveState]);
+    if (await saveDay(day, { energy })) giveFeedback();
+  }, [saveDay]);
 
   const toggleComplete = useCallback(async (day: number) => {
-    const current = stateRef.current[day] || {};
-    const isNowComplete = !current.completed;
-    const newState = { ...stateRef.current, [day]: { ...current, completed: isNowComplete } };
-    await saveState(newState);
-    successFeedback();
-
-    if (isNowComplete && expandedDay === day) {
-      if (day < 7) {
-        setTimeout(() => {
-          setExpandedDay(day + 1);
-        }, 600);
-      }
-    }
-  }, [saveState, expandedDay]);
+    if (await saveDay(day, { completed: !journeyState[day]?.completed })) successFeedback();
+    // Stay on the saved entry. Moving days must be an explicit user action.
+  }, [saveDay, journeyState]);
 
   if (!loaded) {
     return (
       <View style={[styles.screen, { backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center' }]}>
-        <Feather name="loader" size={24} color={colors.primary} />
+        {loadError ? (
+          <>
+            <Text accessibilityRole="alert" style={{ color: colors.destructive, margin: 20, textAlign: 'center' }}>
+              Your saved journey could not be loaded. Nothing has been overwritten.
+            </Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Retry loading saved journey"
+              onPress={() => setLoadAttempt(attempt => attempt + 1)}>
+              <Text style={{ color: colors.primary }}>Retry loading</Text>
+            </Pressable>
+          </>
+        ) : <Feather name="loader" size={24} color={colors.primary} />}
       </View>
     );
   }
@@ -240,7 +246,6 @@ export default function JourneyScreen() {
 
         <View style={[styles.journeyBody, { backgroundColor: colors.card }]}>
           <View style={styles.pathIntro}>
-            {saveError ? <Text accessibilityRole="alert" style={{ color: colors.destructive, marginBottom: 12 }}>{saveError}</Text> : null}
             <View style={styles.pathTitleRow}>
               <Text style={[styles.pathTitle, { color: colors.foreground }]}>Wellness Journey</Text>
               <View style={[styles.progressBadge, { borderColor: colors.border }]}>
@@ -298,6 +303,11 @@ export default function JourneyScreen() {
                 >
                   <Pressable
                     accessibilityRole="button"
+                    accessibilityLabel={`Day ${item.day}: ${item.title}`}
+                    accessibilityState={{ expanded: isExpanded }}
+                    aria-expanded={isExpanded}
+                    testID={`journey-day-${item.day}`}
+                    disabled={isSaving}
                     onPress={() => toggleDay(item.day)}
                     style={styles.dayHeader}
                   >
@@ -318,6 +328,11 @@ export default function JourneyScreen() {
 
                   {isExpanded ? (
                     <View style={styles.dayContent}>
+                      {saveError ? (
+                        <Text accessibilityRole="alert" style={{ color: colors.destructive, marginBottom: 12 }}>
+                          {saveError}
+                        </Text>
+                      ) : null}
                       <Text style={[styles.dayPrompt, { color: colors.foreground }]}>{item.prompt}</Text>
 
                       <View style={styles.energySection}>
@@ -329,6 +344,11 @@ export default function JourneyScreen() {
                               <Pressable
                                 key={level}
                                 accessibilityRole="button"
+                                accessibilityLabel={`Day ${item.day} energy: ${level}`}
+                                accessibilityState={{ selected: isSelected, disabled: isSaving || !storageKey }}
+                                aria-selected={isSelected}
+                                testID={`journey-energy-${item.day}-${level}`}
+                                disabled={isSaving || !storageKey}
                                 onPress={() => setEnergy(item.day, level)}
                                 style={[
                                   styles.energyButton,
@@ -350,6 +370,9 @@ export default function JourneyScreen() {
 
                       <Pressable
                         accessibilityRole="button"
+                        accessibilityLabel={`Day ${item.day}: ${isCompleted ? 'Mark incomplete' : 'Mark complete'}`}
+                        testID={`journey-complete-${item.day}`}
+                        disabled={isSaving || !storageKey}
                         onPress={() => toggleComplete(item.day)}
                         style={({ pressed }) => [
                           styles.completeButton,
@@ -361,9 +384,13 @@ export default function JourneyScreen() {
                           styles.completeButtonText,
                           { color: isCompleted ? colors.primary : colors.primaryForeground }
                         ]}>
-                          {isCompleted ? 'Completed' : 'Mark as complete'}
+                          {isSaving ? 'Saving…' : isCompleted ? 'Completed' : 'Mark as complete'}
                         </Text>
                       </Pressable>
+                      {savedDay === item.day ? (
+                        <Text testID={`journey-saved-${item.day}`} accessibilityLiveRegion="polite"
+                          style={{ color: colors.primary, marginTop: 10 }}>Saved on this device.</Text>
+                      ) : null}
                     </View>
                   ) : null}
                 </View>

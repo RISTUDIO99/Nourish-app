@@ -21,8 +21,12 @@ import type {
 
 import type {
   ContentCollection,
+  ContentCollectionBatchApproval,
+  ContentCollectionBatchApprovalInput,
   ContentCollectionInput,
   ContentFeed,
+  CorrectApproved2027DrinksInput,
+  CorrectedApproved2027Collections,
   HealthStatus,
   TrialStatus
 } from './api.schemas';
@@ -250,6 +254,143 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getCreateContentCollectionMutationOptions(options));
+    }
+
+export const getApproveContentCollectionsBatchUrl = () => {
+
+
+
+
+  return `/api/content/admin/collections/approve-batch`
+}
+
+export const approveContentCollectionsBatch = async (contentCollectionBatchApprovalInput: ContentCollectionBatchApprovalInput, options?: RequestInit): Promise<ContentCollectionBatchApproval> => {
+
+  return customFetch<ContentCollectionBatchApproval>(getApproveContentCollectionsBatchUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      contentCollectionBatchApprovalInput,)
+  }
+);}
+
+
+
+
+export const getApproveContentCollectionsBatchMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approveContentCollectionsBatch>>, TError,{data: BodyType<ContentCollectionBatchApprovalInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof approveContentCollectionsBatch>>, TError,{data: BodyType<ContentCollectionBatchApprovalInput>}, TContext> => {
+
+const mutationKey = ['approveContentCollectionsBatch'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof approveContentCollectionsBatch>>, {data: BodyType<ContentCollectionBatchApprovalInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  approveContentCollectionsBatch(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApproveContentCollectionsBatchMutationResult = NonNullable<Awaited<ReturnType<typeof approveContentCollectionsBatch>>>
+    export type ApproveContentCollectionsBatchMutationBody = BodyType<ContentCollectionBatchApprovalInput>
+    export type ApproveContentCollectionsBatchMutationError = ErrorType<void>
+
+    export const useApproveContentCollectionsBatch = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approveContentCollectionsBatch>>, TError,{data: BodyType<ContentCollectionBatchApprovalInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof approveContentCollectionsBatch>>,
+        TError,
+        {data: BodyType<ContentCollectionBatchApprovalInput>},
+        TContext
+      > => {
+      return useMutation(getApproveContentCollectionsBatchMutationOptions(options));
+    }
+
+export const getCorrectApproved2027DrinksUrl = () => {
+
+
+
+
+  return `/api/content/admin/collections/correct-2027-drinks`
+}
+
+/**
+ * Owner-only operation. Requires the exact confirmation phrase and current collection fingerprints. All twelve changes commit together or none do.
+ * @summary Atomically correct reviewed drinks in all approved 2027 collections
+ */
+export const correctApproved2027Drinks = async (correctApproved2027DrinksInput: CorrectApproved2027DrinksInput, options?: RequestInit): Promise<CorrectedApproved2027Collections> => {
+
+  return customFetch<CorrectedApproved2027Collections>(getCorrectApproved2027DrinksUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      correctApproved2027DrinksInput,)
+  }
+);}
+
+
+
+
+export const getCorrectApproved2027DrinksMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof correctApproved2027Drinks>>, TError,{data: BodyType<CorrectApproved2027DrinksInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof correctApproved2027Drinks>>, TError,{data: BodyType<CorrectApproved2027DrinksInput>}, TContext> => {
+
+const mutationKey = ['correctApproved2027Drinks'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof correctApproved2027Drinks>>, {data: BodyType<CorrectApproved2027DrinksInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  correctApproved2027Drinks(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CorrectApproved2027DrinksMutationResult = NonNullable<Awaited<ReturnType<typeof correctApproved2027Drinks>>>
+    export type CorrectApproved2027DrinksMutationBody = BodyType<CorrectApproved2027DrinksInput>
+    export type CorrectApproved2027DrinksMutationError = ErrorType<void>
+
+    /**
+ * @summary Atomically correct reviewed drinks in all approved 2027 collections
+ */
+export const useCorrectApproved2027Drinks = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof correctApproved2027Drinks>>, TError,{data: BodyType<CorrectApproved2027DrinksInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof correctApproved2027Drinks>>,
+        TError,
+        {data: BodyType<CorrectApproved2027DrinksInput>},
+        TContext
+      > => {
+      return useMutation(getCorrectApproved2027DrinksMutationOptions(options));
     }
 
 export const getUpdateContentCollectionUrl = (id: string,) => {

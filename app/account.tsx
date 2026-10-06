@@ -5,12 +5,15 @@ import { router } from 'expo-router';
 import { useAuth, useClerk, useUser } from '@clerk/expo';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 import { useColors } from '@/hooks/useColors';
 import { useSubscription } from '@/lib/revenuecat';
+import { lightImpact, successFeedback } from '@/lib/feedback';
 import { trialCountdownCopy, useTrial } from '@/lib/trial';
 
 const LEGACY_ROOM_LOGIN_URL = 'https://nourish-meal-plans.com/legacy-reserve/login';
 const APPLE_SUBSCRIPTIONS_URL = 'https://apps.apple.com/account/subscriptions';
+const GOOGLE_SUBSCRIPTIONS_URL = 'https://play.google.com/store/account/subscriptions';
 const SUPPORT_EMAIL = 'support@ristudio.app';
 
 export default function AccountScreen() {
@@ -35,6 +38,9 @@ export default function AccountScreen() {
   const topInset = Platform.OS === 'web' ? Math.max(insets.top, 67) : insets.top;
   const email = user?.primaryEmailAddress?.emailAddress;
   const hasLegacyRoomAccess = access.hasLegacyRoomAccess;
+  const nativeRelease = Platform.OS !== 'web' && Constants.executionEnvironment !== 'storeClient';
+  const appVersion = nativeRelease ? Constants.nativeAppVersion ?? Constants.expoConfig?.version : Constants.expoConfig?.version;
+  const buildVersion = nativeRelease ? Constants.nativeBuildVersion : undefined;
 
   useEffect(() => {
     if (isLoaded && !isSignedIn) router.replace('/(auth)/welcome');
@@ -65,12 +71,12 @@ export default function AccountScreen() {
     setMessage('');
     setMessageIsError(false);
     try {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      await Linking.openURL(customerInfo?.managementURL ?? APPLE_SUBSCRIPTIONS_URL);
+      lightImpact();
+      await Linking.openURL(customerInfo?.managementURL ?? (Platform.OS === 'android' ? GOOGLE_SUBSCRIPTIONS_URL : APPLE_SUBSCRIPTIONS_URL));
     } catch (error) {
-      console.error('Unable to open Apple subscription management.', error);
+      console.error('Unable to open subscription management.', error);
       setMessageIsError(true);
-      setMessage('We couldn’t open Apple subscriptions. Please contact support for help.');
+      setMessage('We couldn’t open your store subscriptions. Please contact support for help.');
     }
   }, [customerInfo?.managementURL]);
 
@@ -80,10 +86,10 @@ export default function AccountScreen() {
     try {
       const info = await restore();
       if (Object.keys(info.entitlements.active).length > 0) {
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void successFeedback();
         setMessage('Your previous Nourish access has been restored.');
       } else {
-        setMessage('No previous Apple purchases were found for this account.');
+        setMessage('No previous store purchases were found for this account.');
       }
     } catch (error) {
       console.error('Unable to restore purchases.', error);
@@ -262,9 +268,33 @@ export default function AccountScreen() {
         </View>
 
         <View style={styles.actions}>
+          {Platform.OS === 'android' && access.isPremium && !access.isFounderDiamond ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Compare or upgrade Nourish membership"
+              testID="account-upgrade-membership"
+              onPress={() => router.push('/paywall')}
+              style={({ pressed }) => [
+                styles.actionButton,
+                { backgroundColor: colors.card, borderColor: colors.border },
+                pressed && styles.pressed,
+              ]}
+            >
+              <View style={[styles.actionIcon, { backgroundColor: colors.secondary }]}>
+                <Feather name="arrow-up-circle" size={18} color={colors.primary} />
+              </View>
+              <View style={styles.actionCopy}>
+                <Text style={[styles.actionTitle, { color: colors.cardForeground }]}>Upgrade membership</Text>
+                <Text style={[styles.actionDescription, { color: colors.mutedForeground }]}>
+                  Compare Nourish plans and choose your upgrade here.
+                </Text>
+              </View>
+              <Feather name="chevron-right" size={19} color={colors.mutedForeground} />
+            </Pressable>
+          ) : null}
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={access.isPremium ? 'Manage or cancel Apple subscription' : 'View Nourish membership options'}
+            accessibilityLabel={access.isPremium ? 'Manage or cancel store subscription' : 'View Nourish membership options'}
             onPress={() => access.isPremium ? void openMembershipManagement() : router.push('/paywall')}
             style={({ pressed }) => [
               styles.actionButton,
@@ -280,7 +310,11 @@ export default function AccountScreen() {
                 {access.isPremium ? 'Manage or cancel subscription' : 'View membership options'}
               </Text>
               <Text style={[styles.actionDescription, { color: colors.mutedForeground }]}>
-                {access.isPremium ? 'Open your store subscriptions to upgrade, downgrade, or cancel your plan.' : 'Compare all three Premium and Founder Diamond plans.'}
+                {access.isPremium
+                  ? Platform.OS === 'android'
+                    ? 'Open Google Play to manage renewal or cancel your plan.'
+                    : 'Open your store subscriptions to upgrade, downgrade, or cancel your plan.'
+                  : 'Compare all three Premium and Founder Diamond plans.'}
               </Text>
             </View>
             <Feather name="chevron-right" size={19} color={colors.mutedForeground} />
@@ -288,7 +322,7 @@ export default function AccountScreen() {
 
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Restore Apple purchases"
+            accessibilityLabel="Restore purchases"
             disabled={isRestoring}
             onPress={() => void restoreAccess()}
             style={({ pressed }) => [
@@ -306,7 +340,7 @@ export default function AccountScreen() {
                 {isRestoring ? 'Restoring purchases…' : 'Restore purchases'}
               </Text>
               <Text style={[styles.actionDescription, { color: colors.mutedForeground }]}>
-                Restore a Nourish membership previously purchased with Apple.
+                Restore a Nourish membership previously purchased through your app store.
               </Text>
             </View>
           </Pressable>
@@ -577,6 +611,13 @@ export default function AccountScreen() {
             </Pressable>
           </View>
         </View>
+        <Text
+          testID="account-build-version"
+          style={[styles.feedbackText, { color: colors.mutedForeground }]}
+        >
+          {nativeRelease ? 'Version' : 'Preview version'} {appVersion ?? 'unknown'}
+          {buildVersion ? ` · Build ${buildVersion}` : ''}
+        </Text>
       </ScrollView>
     </View>
   );

@@ -11,13 +11,15 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import Constants from 'expo-constants';
-import * as Haptics from 'expo-haptics';
+import { successFeedback } from '@/lib/feedback';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Purchases, { type PurchasesPackage } from 'react-native-purchases';
 import { useColors } from '@/hooks/useColors';
 import { useSubscription } from '@/lib/revenuecat';
 import { trialCountdownCopy, useTrial } from '@/lib/trial';
+import { getPurchaseErrorMessage, isActiveStoreProduct } from '@/lib/membership-purchase';
+import { getSubscriptionAccess } from '@/lib/subscription-access';
 
 type ApprovedTier = 'premium-monthly' | 'premium-annual' | 'founder-diamond';
 
@@ -130,19 +132,14 @@ function getApprovedPackages(packages: PurchasesPackage[]) {
   return selected;
 }
 
-function getErrorMessage(error: unknown) {
-  if (error && typeof error === 'object') {
-    if ('userCancelled' in error && error.userCancelled) return null;
-    if ('message' in error && typeof error.message === 'string') return error.message;
-  }
-  return 'The purchase could not be completed. Please try again.';
-}
+const getErrorMessage = getPurchaseErrorMessage;
 
 export default function PaywallScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const {
     access,
+    customerInfo,
     offering,
     isLoading,
     error,
@@ -170,8 +167,16 @@ export default function PaywallScreen() {
     setMessage(null);
     setMessageIsError(false);
     try {
-      await purchase(packageToPurchase);
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const result = await purchase(packageToPurchase);
+      const confirmed = getSubscriptionAccess(result.customerInfo);
+      const requestedTier = getPackageTier(packageToPurchase);
+      if (!isActiveStoreProduct(result.customerInfo, packageToPurchase.product.identifier) ||
+          !(requestedTier === 'founder-diamond' ? confirmed.isFounderDiamond : confirmed.isPremium)) {
+        setMessageIsError(true);
+        setMessage('The store request finished, but your new membership is not confirmed yet. Tap Restore purchases to check again; do not purchase a second time.');
+        return;
+      }
+      successFeedback();
       setMessage('Your Nourish access is ready.');
     } catch (purchaseError) {
       const nextMessage = getErrorMessage(purchaseError);
@@ -196,10 +201,10 @@ export default function PaywallScreen() {
     try {
       const info = await restore();
       if (Object.keys(info.entitlements.active).length > 0) {
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        successFeedback();
         setMessage('Your previous Nourish access has been restored.');
       } else {
-        setMessage('No previous Apple purchases were found for this account.');
+        setMessage('No previous store purchases were found for this account.');
       }
     } catch (restoreError) {
       setMessageIsError(true);
@@ -272,7 +277,7 @@ export default function PaywallScreen() {
         <Text style={[styles.intro, { color: colors.mutedForeground }]}>
           {showTrialExperience
             ? `${trialCountdownCopy(daysRemaining)} Full Premium access is active with no card required. Ready now? You can choose any membership below.`
-            : 'Choose the Premium support that feels right. Purchases are securely processed by Apple.'}
+            : `Choose the Premium support that feels right. Purchases are securely processed by ${Platform.OS === 'android' ? 'Google Play' : 'Apple'}.`}
         </Text>
 
         {message ? (
@@ -344,7 +349,9 @@ export default function PaywallScreen() {
               tier.id === 'founder-diamond'
                 ? access.isFounderDiamond
                 : tier.id === 'premium-monthly' || tier.id === 'premium-annual'
-                  ? access.isPremium && !access.isFounderDiamond
+                  ? Platform.OS === 'android' && packageToPurchase
+                    ? access.isFounderDiamond || isActiveStoreProduct(customerInfo, packageToPurchase.product.identifier)
+                    : access.isPremium && !access.isFounderDiamond
                   : false;
             return (
               <View
@@ -534,7 +541,7 @@ export default function PaywallScreen() {
 
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Restore Apple purchases"
+          accessibilityLabel="Restore purchases"
           testID="restore-purchases"
           disabled={isRestoring || isPurchasing}
           onPress={() => void restoreAccess()}
@@ -546,7 +553,7 @@ export default function PaywallScreen() {
             <Text style={[styles.restoreText, { color: colors.primary }]}>Restore purchases</Text>
           )}
         </Pressable>
-        <Pressable
+        {Platform.OS === 'ios' && <Pressable
           accessibilityRole="button"
           accessibilityLabel="Redeem an Apple offer code"
           accessibilityHint="Opens Apple’s code redemption sheet"
@@ -567,11 +574,13 @@ export default function PaywallScreen() {
               <Text style={[styles.redeemText, { color: colors.primary }]}>Redeem code</Text>
             </>
           )}
-        </Pressable>
+        </Pressable>}
         <Text style={[styles.legal, { color: colors.mutedForeground }]}>
           {showTrialExperience
             ? 'Your 14-day Premium trial remains free and requires no payment method. Choosing a paid membership is optional and starts that membership immediately.'
-            : 'Paid memberships renew through your Apple ID unless cancelled at least 24 hours before the end of the current period.'}
+            : Platform.OS === 'android'
+              ? 'Paid memberships renew through Google Play unless cancelled in Google Play before the next billing date.'
+              : 'Paid memberships renew through your Apple ID unless cancelled at least 24 hours before the end of the current period.'}
         </Text>
         {error ? (
           <Text style={[styles.providerError, { color: colors.destructive }]}>

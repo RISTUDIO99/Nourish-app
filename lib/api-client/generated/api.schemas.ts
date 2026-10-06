@@ -86,6 +86,58 @@ export type ContentCollection = ContentCollectionInput & {
   status: ContentCollectionStatus;
 };
 
+export interface ContentCollectionBatchApprovalInput {
+  /**
+     * @minItems 12
+     * @maxItems 12
+     */
+  ids: string[];
+}
+
+export interface ContentCollectionBatchApproval {
+  /**
+     * @minItems 12
+     * @maxItems 12
+     */
+  collections: ContentCollection[];
+}
+
+export type CorrectApproved2027DrinksInputConfirmationPhrase = typeof CorrectApproved2027DrinksInputConfirmationPhrase[keyof typeof CorrectApproved2027DrinksInputConfirmationPhrase];
+
+
+export const CorrectApproved2027DrinksInputConfirmationPhrase = {
+  CORRECT_2027_DRINKS: 'CORRECT 2027 DRINKS',
+} as const;
+
+export interface Approved2027DrinkCorrection {
+  /** @minLength 1 */
+  id: string;
+  /** @pattern ^sha256:[0-9a-f]{64}$ */
+  expectedFingerprint: string;
+  /**
+     * @minItems 2
+     * @maxItems 2
+     */
+  drinks: ContentMeal[];
+}
+
+export interface CorrectApproved2027DrinksInput {
+  confirmationPhrase: CorrectApproved2027DrinksInputConfirmationPhrase;
+  /**
+     * @minItems 12
+     * @maxItems 12
+     */
+  collections: Approved2027DrinkCorrection[];
+}
+
+export interface CorrectedApproved2027Collections {
+  /**
+     * @minItems 12
+     * @maxItems 12
+     */
+  collections: ContentCollection[];
+}
+
 export interface ContentFeed {
   serverNow: string;
   featured: ContentCollection | null;
